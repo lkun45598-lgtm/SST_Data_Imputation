@@ -33,7 +33,8 @@ from losses.temporal_loss import combined_loss_temporal
 def setup_distributed(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '29520'  # 新端口
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
 
 
 def cleanup_distributed():
@@ -223,13 +224,13 @@ def train_worker(rank, world_size):
 
     # 数据路径
     data_dir = '/data/sst_data/sst_missing_value_imputation/processed_data'
-    save_dir = '/home/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/experiments/temporal_30days_composition'
-    batch_size = 4  # per GPU (总batch=32)
+    save_dir = '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain'
+    batch_size = 4  # per GPU (总batch=16)
 
     if rank == 0:
         os.makedirs(save_dir, exist_ok=True)
         print("\n" + "="*80)
-        print("FNO_CBAM Temporal Training (8 GPU DDP) - Output Composition版")
+        print("FNO_CBAM Temporal Training (4 GPU DDP) - Output Composition版")
         print("="*80)
         print(f"\n【核心改进】输出组合:")
         print(f"  final = input * (1-mask) + pred * mask")
@@ -255,9 +256,9 @@ def train_worker(rank, world_size):
     valid_sampler = DistributedSampler(valid_dataset, num_replicas=world_size, rank=rank, shuffle=False)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=train_sampler,
-                             num_workers=16, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+                             num_workers=8, pin_memory=True, prefetch_factor=4, persistent_workers=True)
     valid_loader = DataLoader(valid_dataset, batch_size=batch_size, sampler=valid_sampler,
-                             num_workers=16, pin_memory=True, prefetch_factor=4, persistent_workers=True)
+                             num_workers=8, pin_memory=True, prefetch_factor=4, persistent_workers=True)
 
     if rank == 0:
         print(f"数据:")
@@ -352,7 +353,7 @@ def train_worker(rank, world_size):
 
 
 def main():
-    world_size = 8
+    world_size = 4
     mp.spawn(train_worker, args=(world_size,), nprocs=world_size, join=True)
 
 
