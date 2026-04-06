@@ -42,11 +42,11 @@ warnings.filterwarnings('ignore')
 # ============================================================================
 
 KNN_FILLED_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled')
-OUTPUT_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/evaluation_results')
-MODEL_PATH = '/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/experiments/jaxa_finetune_8years/best_model.pth'
+OUTPUT_DIR = Path('/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/evaluation_results')
+MODEL_PATH = '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune/best_model.pth'
 
 WINDOW_SIZE = 30
-GPU_ID = 4
+GPU_ID = 2
 NUM_TEST_SAMPLES = 30
 SERIES_ID = 0
 MASK_RATIO = 0.2

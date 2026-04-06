@@ -340,7 +340,7 @@ def train_worker(rank, world_size, config):
     if rank == 0:
         os.makedirs(save_dir, exist_ok=True)
         print("\n" + "="*80)
-        print("JAXA Fine-tuning Training (8 GPU DDP)")
+        print("JAXA Fine-tuning Training (4 GPU DDP)")
         print("="*80)
         print(f"\n配置:")
         print(f"  - 数据目录: {data_dir}")
@@ -513,14 +513,14 @@ def main():
     # 配置
     config = {
         'data_dir': '/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled',
-        'save_dir': '/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/experiments/jaxa_finetune_8years',
-        'pretrained_path': '/home/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/experiments/temporal_30days_composition_fast/best_model.pth',
+        'save_dir': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune',
+        'pretrained_path': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain/best_model.pth',
         'batch_size': 2,  # per GPU
         'num_epochs': 100,  # 100 epochs
         'lr': 5e-4,  # 微调用较小学习率
     }
 
-    world_size = 8  # 8卡DDP
+    world_size = 4  # 4卡DDP
     mp.spawn(train_worker, args=(world_size, config), nprocs=world_size, join=True)
 
 

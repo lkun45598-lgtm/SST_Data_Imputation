@@ -45,13 +45,13 @@ warnings.filterwarnings('ignore')
 # 数据路径
 KNN_FILLED_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled')
 FILTERED_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_filtered')
-OUTPUT_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_filled_output')
-VIS_DIR = Path('/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_filled_visualization')
-MODEL_PATH = '/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/experiments/jaxa_finetune_8years/best_model.pth'
+OUTPUT_DIR = Path('/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_filled_output')
+VIS_DIR = Path('/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_filled_visualization')
+MODEL_PATH = '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune/best_model.pth'
 
 # 模型参数
 WINDOW_SIZE = 30  # 30天输入序列
-GPU_ID = 4  # 使用GPU 4
+GPU_ID = 2  # 使用GPU 2
 NUM_TEST_SAMPLES = 30  # 测试样本数 (设为None则处理全部)
 
 # 要处理的序列ID（对应jaxa_knn_filled_XX.h5 和 jaxa_filtered_XX.h5）
