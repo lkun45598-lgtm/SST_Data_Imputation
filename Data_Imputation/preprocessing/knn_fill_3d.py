@@ -57,8 +57,25 @@ def progressive_knn_fill_3d(sst_data, missing_masks, land_mask,
     total_filled = 0
 
     print(f"  3D KNN 参数: k={k}, window={window_size}天, "
-          f"time_weight={time_weight}, batch={batch_size}")
+          f"time_weight={time_weight}, batch={batch_size}, 偏差校正=ON")
     print(f"  数据: {T}帧, 海洋像素/帧={ocean_mask.sum()}")
+
+    # --- 预计算每帧的观测区海洋均值（用于偏差校正） ---
+    frame_obs_mean = np.full(T, np.nan)
+    for t in range(T):
+        obs_pixels = sst_data[t][(missing_masks[t] == 0) & ocean_mask]
+        obs_pixels = obs_pixels[~np.isnan(obs_pixels)]
+        if len(obs_pixels) > 0:
+            frame_obs_mean[t] = obs_pixels.mean()
+
+    # 对观测区极少的帧，用前后帧均值插值
+    for t in range(T):
+        if np.isnan(frame_obs_mean[t]):
+            # 向前找最近有效值
+            for t2 in range(t - 1, -1, -1):
+                if not np.isnan(frame_obs_mean[t2]):
+                    frame_obs_mean[t] = frame_obs_mean[t2]
+                    break
 
     for t in tqdm(range(T), desc="    3D KNN"):
         # --- 当前帧缺失像素 ---
@@ -75,6 +92,9 @@ def progressive_knn_fill_3d(sst_data, missing_masks, land_mask,
         sort_idx = np.argsort(density)
         sorted_y = missing_y[sort_idx]
         sorted_x = missing_x[sort_idx]
+
+        # 当前帧观测区均值
+        curr_mean = frame_obs_mean[t]
 
         # --- Tier 1: 历史帧 KDTree（t-6..t-1，已完全填充） ---
         t_start = max(0, t - window_size + 1)
@@ -93,7 +113,10 @@ def progressive_knn_fill_3d(sst_data, missing_masks, land_mask,
                 vy.astype(np.float64) * space_weight,
                 vx.astype(np.float64) * space_weight
             ]))
-            past_values_list.append(filled_sst[t_past, vy, vx])
+            # 偏差校正：将历史帧值偏移到当前帧的温度水平
+            past_mean = frame_obs_mean[t_past]
+            bias = curr_mean - past_mean if (not np.isnan(curr_mean) and not np.isnan(past_mean)) else 0.0
+            past_values_list.append(filled_sst[t_past, vy, vx] + bias)
 
         past_tree = None
         past_values = None
