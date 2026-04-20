@@ -13,56 +13,65 @@
 - **高斯滤波后处理**：平滑重建结果，减少噪声
 - **全量数据重建**：已完成2016-07至2025-03共73,004个逐小时SST文件重建
 
+📖 **详细方法论文档**：[METHODOLOGY.md](METHODOLOGY.md) - 包含完整的算法原理、模型架构、训练策略和技术创新点
+
 ## 目录结构
 
 ```
-Data_Imputation/
-├── models/                     # 模型定义
-│   └── fno_cbam_temporal.py    # FNO-CBAM时序模型
+SST_Data_Imputation/
+├── METHODOLOGY.md              # 📖 详细方法论文档
+├── README.md                   # 项目说明
 │
-├── losses/                     # 损失函数
-│   └── temporal_loss.py        # 组合损失 (MSE + 梯度 + 时间连续性)
+├── Data_Imputation/
+│   ├── models/                 # 模型定义
+│   │   └── fno_cbam_temporal.py    # FNO-CBAM时序模型（~606M参数）
+│   │
+│   ├── losses/                 # 损失函数
+│   │   └── temporal_loss.py    # 组合损失 (MSE + 梯度 + 边界平滑)
+│   │
+│   ├── datasets/               # 数据集定义
+│   │   ├── ostia_dataset.py    # OSTIA预训练数据集
+│   │   ├── ostia_dataset_filled.py # OSTIA预填充数据集
+│   │   └── jaxa_dataset.py     # JAXA微调数据集
+│   │
+│   ├── preprocessing/          # 数据预处理Pipeline
+│   │   ├── temporal_weighted_fill.py   # Step1: 时间加权填充
+│   │   ├── lowpass_filter.py           # Step2: 低通滤波
+│   │   ├── knn_fill.py                 # Step3: 2D KNN填充
+│   │   └── knn_fill_3d.py              # Step3: 3D渐进式KNN填充（推荐）
+│   │
+│   ├── training/               # 训练脚本
+│   │   ├── train_ostia.py      # OSTIA预训练 (8 GPU DDP)
+│   │   └── train_jaxa_hourly.py # JAXA逐小时微调 (8 GPU DDP, H=00~H=23)
+│   │
+│   ├── inference/              # 推理与评估
+│   │   ├── fill_jaxa.py        # JAXA数据填充
+│   │   ├── evaluate.py         # 模型评估 (VRMSE, MAE, RMSE)
+│   │   ├── jaxa_inference_dataset.py   # 推理数据集
+│   │   ├── infer_and_visualize_h01.py  # 单小时推理+可视化模板
+│   │   └── infer_with_original_missing_h01.py  # 原始缺失推理模板
+│   │
+│   ├── postprocessing/         # 后处理
+│   │   └── gaussian_filter.py  # 高斯滤波平滑（σ=1.0）
+│   │
+│   ├── visualization/          # 可视化
+│   │   ├── plot_reconstruction.py  # 重建结果可视化
+│   │   └── compare_sigma.py    # 高斯滤波sigma对比
+│   │
+│   └── utils/                  # 工具脚本
 │
-├── datasets/                   # 数据集定义
-│   ├── ostia_dataset.py        # OSTIA预训练数据集
-│   ├── ostia_dataset_filled.py # OSTIA预填充数据集 (加速加载)
-│   └── jaxa_dataset.py         # JAXA微调数据集
-│
-├── preprocessing/              # 数据预处理Pipeline
-│   ├── temporal_weighted_fill.py   # Step1: 时间加权填充 (hourly→daily)
-│   ├── lowpass_filter.py           # Step2: 低通滤波
-│   └── knn_fill.py                 # Step3: KNN空间填充
-│
-├── training/                   # 训练脚本
-│   ├── train_ostia.py          # OSTIA预训练 (8 GPU DDP)
-│   └── train_jaxa_hourly.py    # JAXA逐小时微调 (4 GPU DDP, H=00~H=23)
-│
-├── inference/                  # 推理与评估
-│   ├── fill_jaxa.py            # JAXA数据填充
-│   ├── evaluate.py             # 模型评估 (VRMSE, MAE, RMSE)
-│   ├── jaxa_inference_dataset.py   # 推理数据集
-│   ├── infer_and_visualize_h01.py  # 单小时推理+可视化模板
-│   └── infer_with_original_missing_h01.py  # 原始缺失推理模板
-│
-├── postprocessing/             # 后处理
-│   └── gaussian_filter.py      # 高斯滤波平滑
-│
-├── visualization/              # 可视化
-│   ├── plot_reconstruction.py  # 重建结果可视化
-│   └── compare_sigma.py        # 高斯滤波sigma对比
-│
-└── scripts/                    # 批处理脚本
+└── scripts/                    # 生产脚本
     ├── inference/
     │   ├── batch/              # 批量推理（生产）
     │   │   ├── batch_infer_hourly.py
     │   │   ├── batch_infer_original_hourly.py
-    │   │   └── infer_jaxa_full.py
+    │   │   └── infer_jaxa_full.py  # 全量推理（73,004文件）
     │   ├── single/             # 单样本推理（调试）
     │   └── visualization/      # 数据可视化
-    │       └── plot_point_timeseries.py
+    │       └── plot_point_timeseries.py  # 时序图绘制
     ├── training/
-    │   ├── batch_preprocess_hourly.sh
-    │   └── batch_train_hourly.sh
+    │   ├── batch_preprocess_hourly.sh  # 批量预处理
+    │   └── batch_train_hourly.sh       # 批量训练H=00~H=23
     └── testing/                # 测试脚本
 ```
 
@@ -300,13 +309,42 @@ tqdm
 3. **高斯滤波**：推荐sigma=1.0，过大会模糊细节，过小效果不明显
 4. **GPU内存**：单卡推理需要约8GB显存
 
+## 文档
+
+- **[METHODOLOGY.md](METHODOLOGY.md)** - 详细方法论文档
+  - 3D渐进式KNN填充算法原理
+  - FNO-CBAM模型架构详解
+  - 损失函数设计与数学推导
+  - 两阶段训练策略
+  - 技术创新点与应用场景
+
+- **[/data/sst_data/SST_Data_Imputation/README.md](/data/sst_data/SST_Data_Imputation/README.md)** - 输出数据集说明
+  - 数据格式与变量定义
+  - 读取示例代码
+  - 数据统计信息
+
+## 引用
+
+如果您使用本项目的代码或数据，请引用：
+
+```bibtex
+@software{sst_reconstruction_2026,
+  title = {FNO-CBAM SST缺失值重建系统},
+  author = {Claude Code},
+  year = {2026},
+  url = {https://github.com/lkun45598-lgtm/SST_Data_Imputation}
+}
+```
+
 ## 作者
 
 Claude Code
 
 ## 更新日志
 
+- 2026-04-20: 添加详细方法论文档（METHODOLOGY.md）
+- 2026-01-24: 完成全量数据重建（73,004文件）
 - 2026-01-23: 项目重构，模块化整理
-- 2026-01-22: JAXA 8年数据微调完成
+- 2026-01-22: JAXA逐小时微调完成（H=00~H=23）
 - 2026-01-20: 添加高斯滤波后处理
 - 2026-01-19: OSTIA预训练完成
