@@ -1,1 +1,10 @@
 CLAUDE.md
+
+# Logs
+logs/
+
+# Debug/Testing scripts (keep locally, don't upload)
+scripts/inference/single/
+scripts/testing/
+scripts/training/train_debug.py
+scripts/training/train_single_gpu.py

@@ -35,7 +35,7 @@ warnings.filterwarnings('ignore')
 from scipy.ndimage import gaussian_filter
 
 # ── 项目路径 ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).parent / 'Data_Imputation'
+PROJECT_ROOT = Path(__file__).resolve().parents[3] / 'Data_Imputation'
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal

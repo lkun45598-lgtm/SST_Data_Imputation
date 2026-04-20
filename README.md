@@ -52,14 +52,18 @@ Data_Imputation/
 │   └── compare_sigma.py        # 高斯滤波sigma对比
 │
 └── scripts/                    # 批处理脚本
+    ├── inference/
+    │   ├── batch/              # 批量推理（生产）
+    │   │   ├── batch_infer_hourly.py
+    │   │   ├── batch_infer_original_hourly.py
+    │   │   └── infer_jaxa_full.py
+    │   ├── single/             # 单样本推理（调试）
+    │   └── visualization/      # 数据可视化
+    │       └── plot_point_timeseries.py
     ├── training/
-    │   └── batch_train_hourly.sh   # 批量训练H=00~H=23
-    ├── preprocessing/
-    │   └── batch_preprocess_hourly.sh  # 批量预处理逐小时数据
-    └── inference/
-        ├── batch_infer_hourly.py       # 批量推理（人工挖空验证）
-        ├── batch_infer_original_hourly.py  # 批量推理（原始缺失+可视化）
-        └── infer_jaxa_full.py          # 全量推理（生成73K文件）
+    │   ├── batch_preprocess_hourly.sh
+    │   └── batch_train_hourly.sh
+    └── testing/                # 测试脚本
 
 ├── sst_pipeline/               # 统一Pipeline模块
 │   ├── config.py               # 配置管理
