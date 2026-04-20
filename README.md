@@ -289,7 +289,7 @@ tqdm
 
 ## 作者
 
-Claude Code
+Lei Zheng
 
 ## 更新日志
 
