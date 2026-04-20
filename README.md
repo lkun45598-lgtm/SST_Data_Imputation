@@ -330,7 +330,7 @@ tqdm
 ```bibtex
 @software{sst_reconstruction_2026,
   title = {FNO-CBAM SST缺失值重建系统},
-  author = {Claude Code},
+  author = {Leizheng},
   year = {2026},
   url = {https://github.com/lkun45598-lgtm/SST_Data_Imputation}
 }
@@ -338,7 +338,7 @@ tqdm
 
 ## 作者
 
-Claude Code
+Leizheng
 
 ## 更新日志
 
