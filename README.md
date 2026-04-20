@@ -64,19 +64,6 @@ Data_Imputation/
     │   ├── batch_preprocess_hourly.sh
     │   └── batch_train_hourly.sh
     └── testing/                # 测试脚本
-
-├── sst_pipeline/               # 统一Pipeline模块
-│   ├── config.py               # 配置管理
-│   ├── pipeline.py             # 主Pipeline类
-│   ├── run.py                  # 命令行入口
-│   ├── data/loader.py          # 数据加载器
-│   ├── model/wrapper.py        # 模型封装
-│   ├── inference/predictor.py  # 推理器
-│   ├── postprocess/gaussian.py # 高斯后处理
-│   └── visualization/plotter.py # 可视化绘图
-│
-├── scripts/                    # Shell脚本
-└── docs/                       # 文档
 ```
 
 ## 数据流程
@@ -94,7 +81,7 @@ JAXA hourly NC files
         ↓
     jaxa_filtered/*.h5
         ↓
-[knn_fill.py] KNN空间填充
+[knn_fill.py] 3D KNN时空填充（考虑时间连续性）
         ↓
     jaxa_knn_filled/*.h5  ← 模型输入数据
 ```
@@ -136,7 +123,7 @@ Stage 2: JAXA逐小时微调 (H=00~H=23)
 
 ```bash
 # 批量推理脚本（H=01~H=23）
-python scripts/inference/infer_jaxa_full.py
+python scripts/inference/batch/infer_jaxa_full.py
 
 # 输出目录结构
 /data/sst_data/SST_Data_Imputation/
@@ -149,43 +136,34 @@ python scripts/inference/infer_jaxa_full.py
 
 ## 快速开始
 
-### 使用Pipeline API
-
-```python
-from sst_pipeline import Pipeline
-
-# 初始化Pipeline
-pipeline = Pipeline()
-
-# 处理单个日期
-result = pipeline.process(
-    date="2017-08-08",
-    apply_gaussian=True,
-    sigma=1.0,
-    visualize=True
-)
-
-# 查看可用日期
-dates = pipeline.get_available_dates()
-```
-
-### 使用命令行
+### 训练模型
 
 ```bash
-# 处理单个日期
-python -m sst_pipeline.run --date 2017-08-08 --sigma 1.0
+# 1. OSTIA预训练（8 GPU）
+cd Data_Imputation/training
+python train_ostia.py
 
-# 处理日期范围
-python -m sst_pipeline.run --start-date 2017-08-01 --end-date 2017-08-10
+# 2. JAXA逐小时微调（批量训练H=00~H=23）
+cd ../../scripts/training
+bash batch_train_hourly.sh
+```
 
-# 查看可用日期
-python -m sst_pipeline.run --list-dates
+### 批量推理
 
-# 自定义参数
-python -m sst_pipeline.run --date 2017-08-08 \
-    --sigma 1.5 \
-    --mask-ratio 0.3 \
-    --no-visualize
+```bash
+# 推理所有JAXA数据（H=01~H=23）
+python scripts/inference/batch/infer_jaxa_full.py --gpu 6
+
+# 可视化推理结果（原始缺失模式）
+python scripts/inference/batch/batch_infer_original_hourly.py --hours 1-23 --gpu 6
+```
+
+### 数据可视化
+
+```bash
+# 绘制指定点的时序图（年度/月度/周度）
+python scripts/inference/visualization/plot_point_timeseries.py \
+    --lat 19.0 --lon 115.0 --year 2024 --month 7
 ```
 
 ## 模型架构
