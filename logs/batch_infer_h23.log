@@ -1,0 +1,28 @@
+=================================================================
+批量原始缺失推理  |  GPU: cuda:6  |  hours: [23]  |  series: 8
+=================================================================
+
+--- H=23 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h23
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=23] Sample 1: missing=25.6%, diff_mean=-0.873°C, diff_std=0.505°C → sample_01_20240924.png
+  [H=23] Sample 2: missing=13.2%, diff_mean=-0.145°C, diff_std=0.533°C → sample_02_20241117.png
+  [H=23] Sample 3: missing=94.4%, diff_mean=+0.053°C, diff_std=0.602°C → sample_03_20250109.png
+  [H=23] Sample 4: missing=48.3%, diff_mean=+0.616°C, diff_std=0.820°C → sample_04_20250303.png
+  [H=23] 完成 | 平均缺失率=45.4%, 平均Diff Std=0.615°C
+
+=================================================================
+    小时         平均缺失率   Diff Std (°C)
+----------------------------------------
+  H=23          45.4%           0.615
+----------------------------------------
+  平均          45.4%           0.615
+=================================================================

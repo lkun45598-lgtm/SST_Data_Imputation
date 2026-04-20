@@ -6,11 +6,12 @@
 
 本项目针对JAXA卫星SST数据中由于云层遮挡导致的缺失值问题，采用深度学习方法进行重建。主要特点：
 
-- **两阶段训练策略**：OSTIA预训练 → JAXA微调
+- **两阶段训练策略**：OSTIA预训练 → JAXA逐小时微调（H=00~H=23）
 - **30天时间序列输入**：利用时间连续性信息
 - **FNO-CBAM架构**：结合傅里叶神经算子和注意力机制
 - **Output Composition**：观测区域保留原值，仅对缺失区域进行预测
 - **高斯滤波后处理**：平滑重建结果，减少噪声
+- **全量数据重建**：已完成2016-07至2025-03共73,004个逐小时SST文件重建
 
 ## 目录结构
 
@@ -34,12 +35,14 @@ Data_Imputation/
 │
 ├── training/                   # 训练脚本
 │   ├── train_ostia.py          # OSTIA预训练 (8 GPU DDP)
-│   └── train_jaxa.py           # JAXA微调 (8 GPU DDP)
+│   └── train_jaxa_hourly.py    # JAXA逐小时微调 (4 GPU DDP, H=00~H=23)
 │
 ├── inference/                  # 推理与评估
 │   ├── fill_jaxa.py            # JAXA数据填充
 │   ├── evaluate.py             # 模型评估 (VRMSE, MAE, RMSE)
-│   └── jaxa_inference_dataset.py   # 推理数据集
+│   ├── jaxa_inference_dataset.py   # 推理数据集
+│   ├── infer_and_visualize_h01.py  # 单小时推理+可视化模板
+│   └── infer_with_original_missing_h01.py  # 原始缺失推理模板
 │
 ├── postprocessing/             # 后处理
 │   └── gaussian_filter.py      # 高斯滤波平滑
@@ -48,6 +51,16 @@ Data_Imputation/
 │   ├── plot_reconstruction.py  # 重建结果可视化
 │   └── compare_sigma.py        # 高斯滤波sigma对比
 │
+└── scripts/                    # 批处理脚本
+    ├── training/
+    │   └── batch_train_hourly.sh   # 批量训练H=00~H=23
+    ├── preprocessing/
+    │   └── batch_preprocess_hourly.sh  # 批量预处理逐小时数据
+    └── inference/
+        ├── batch_infer_hourly.py       # 批量推理（人工挖空验证）
+        ├── batch_infer_original_hourly.py  # 批量推理（原始缺失+可视化）
+        └── infer_jaxa_full.py          # 全量推理（生成73K文件）
+
 ├── sst_pipeline/               # 统一Pipeline模块
 │   ├── config.py               # 配置管理
 │   ├── pipeline.py             # 主Pipeline类
@@ -89,13 +102,14 @@ Stage 1: OSTIA预训练
     - 数据: OSTIA SST (南海区域)
     - 输入: 30天SST序列（缺失区域用最近邻插值填充）+ 30天Mask序列
     - 目的: 学习SST的空间模式和时间动态
-    - 脚本: training/train_ostia.py
+    - 脚本: Data_Imputation/training/train_ostia.py
 
-Stage 2: JAXA微调
-    - 数据: JAXA SST (南海区域, 高分辨率)
-    - 输入: 30天SST序列（缺失区域用KNN填充）+ 30天Mask序列
-    - 目的: 适应目标区域的特征
-    - 脚本: training/train_jaxa.py
+Stage 2: JAXA逐小时微调 (H=00~H=23)
+    - 数据: JAXA hourly SST (24个小时分别训练24个模型)
+    - 输入: 30天SST序列（缺失区域用3D KNN填充）+ 30天Mask序列
+    - 目的: 适应目标区域特征，捕捉日变化规律
+    - 脚本: Data_Imputation/training/train_jaxa_hourly.py
+    - 批量训练: scripts/training/batch_train_hourly.sh
 ```
 
 ### 3. 推理流程
@@ -111,6 +125,23 @@ Stage 2: JAXA微调
         ↓
     最终重建结果
 ```
+
+### 4. 全量数据重建
+
+已完成2016-07至2025-03共73,004个逐小时SST文件的重建：
+
+```bash
+# 批量推理脚本（H=01~H=23）
+python scripts/inference/infer_jaxa_full.py
+
+# 输出目录结构
+/data/sst_data/SST_Data_Imputation/
+├── YYYYMM/
+│   └── DD/
+│       └── YYYYMMDDHHMMSS.nc  # 单变量格式，包含Gaussian σ=1.0滤波
+```
+
+详细说明见 `/data/sst_data/SST_Data_Imputation/README.md`
 
 ## 快速开始
 

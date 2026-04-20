@@ -1,0 +1,424 @@
+=================================================================
+批量原始缺失推理  |  GPU: cuda:6  |  hours: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]  |  series: 8
+=================================================================
+
+--- H=01 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h01
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=01] Sample 1: missing=18.0%, diff_mean=-0.537°C, diff_std=0.693°C → sample_01_20240924.png
+  [H=01] Sample 2: missing=64.1%, diff_mean=-0.252°C, diff_std=0.445°C → sample_02_20241117.png
+  [H=01] Sample 3: missing=87.3%, diff_mean=+0.261°C, diff_std=0.491°C → sample_03_20250108.png
+  [H=01] Sample 4: missing=57.8%, diff_mean=+0.451°C, diff_std=0.530°C → sample_04_20250301.png
+  [H=01] 完成 | 平均缺失率=56.8%, 平均Diff Std=0.539°C
+
+--- H=02 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h02
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=02] Sample 1: missing=17.8%, diff_mean=-0.648°C, diff_std=0.604°C → sample_01_20240924.png
+  [H=02] Sample 2: missing=60.1%, diff_mean=-0.253°C, diff_std=0.431°C → sample_02_20241117.png
+  [H=02] Sample 3: missing=88.9%, diff_mean=+0.345°C, diff_std=0.479°C → sample_03_20250108.png
+  [H=02] Sample 4: missing=57.2%, diff_mean=+0.503°C, diff_std=0.538°C → sample_04_20250301.png
+  [H=02] 完成 | 平均缺失率=56.0%, 平均Diff Std=0.513°C
+
+--- H=03 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h03
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=03] Sample 1: missing=18.9%, diff_mean=-0.677°C, diff_std=0.669°C → sample_01_20240924.png
+  [H=03] Sample 2: missing=54.8%, diff_mean=-0.288°C, diff_std=0.477°C → sample_02_20241117.png
+  [H=03] Sample 3: missing=85.1%, diff_mean=+0.306°C, diff_std=0.485°C → sample_03_20250108.png
+  [H=03] Sample 4: missing=52.4%, diff_mean=+0.497°C, diff_std=0.671°C → sample_04_20250301.png
+  [H=03] 完成 | 平均缺失率=52.8%, 平均Diff Std=0.576°C
+
+--- H=04 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h04
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=04] Sample 1: missing=15.3%, diff_mean=-0.518°C, diff_std=0.578°C → sample_01_20240925.png
+  [H=04] Sample 2: missing=21.5%, diff_mean=-0.256°C, diff_std=0.385°C → sample_02_20241118.png
+  [H=04] Sample 3: missing=89.8%, diff_mean=+0.394°C, diff_std=0.476°C → sample_03_20250110.png
+  [H=04] Sample 4: missing=57.9%, diff_mean=+0.470°C, diff_std=0.775°C → sample_04_20250304.png
+  [H=04] 完成 | 平均缺失率=46.1%, 平均Diff Std=0.553°C
+
+--- H=05 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h05
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=05] Sample 1: missing=15.4%, diff_mean=-0.539°C, diff_std=0.624°C → sample_01_20240924.png
+  [H=05] Sample 2: missing=22.6%, diff_mean=-0.156°C, diff_std=0.376°C → sample_02_20241117.png
+  [H=05] Sample 3: missing=74.5%, diff_mean=+0.310°C, diff_std=0.503°C → sample_03_20250109.png
+  [H=05] Sample 4: missing=44.2%, diff_mean=+0.402°C, diff_std=0.756°C → sample_04_20250303.png
+  [H=05] 完成 | 平均缺失率=39.2%, 平均Diff Std=0.565°C
+
+--- H=06 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h06
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=06] Sample 1: missing=16.2%, diff_mean=-0.573°C, diff_std=0.583°C → sample_01_20240924.png
+  [H=06] Sample 2: missing=22.0%, diff_mean=-0.146°C, diff_std=0.409°C → sample_02_20241117.png
+  [H=06] Sample 3: missing=74.5%, diff_mean=+0.245°C, diff_std=0.510°C → sample_03_20250109.png
+  [H=06] Sample 4: missing=39.9%, diff_mean=+0.419°C, diff_std=0.798°C → sample_04_20250303.png
+  [H=06] 完成 | 平均缺失率=38.2%, 平均Diff Std=0.575°C
+
+--- H=07 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h07
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=07] Sample 1: missing=16.8%, diff_mean=-0.662°C, diff_std=0.585°C → sample_01_20240924.png
+  [H=07] Sample 2: missing=22.5%, diff_mean=-0.129°C, diff_std=0.393°C → sample_02_20241117.png
+  [H=07] Sample 3: missing=75.2%, diff_mean=+0.320°C, diff_std=0.536°C → sample_03_20250109.png
+  [H=07] Sample 4: missing=37.2%, diff_mean=+0.445°C, diff_std=0.758°C → sample_04_20250303.png
+  [H=07] 完成 | 平均缺失率=37.9%, 平均Diff Std=0.568°C
+
+--- H=08 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h08
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=08] Sample 1: missing=17.5%, diff_mean=-0.733°C, diff_std=0.568°C → sample_01_20240924.png
+  [H=08] Sample 2: missing=21.6%, diff_mean=-0.176°C, diff_std=0.419°C → sample_02_20241117.png
+  [H=08] Sample 3: missing=75.0%, diff_mean=+0.376°C, diff_std=0.521°C → sample_03_20250109.png
+  [H=08] Sample 4: missing=35.5%, diff_mean=+0.516°C, diff_std=0.817°C → sample_04_20250303.png
+  [H=08] 完成 | 平均缺失率=37.4%, 平均Diff Std=0.581°C
+
+--- H=09 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h09
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=09] Sample 1: missing=19.7%, diff_mean=-0.974°C, diff_std=0.539°C → sample_01_20240924.png
+  [H=09] Sample 2: missing=21.3%, diff_mean=-0.204°C, diff_std=0.417°C → sample_02_20241117.png
+  [H=09] Sample 3: missing=74.1%, diff_mean=+0.314°C, diff_std=0.471°C → sample_03_20250109.png
+  [H=09] Sample 4: missing=31.6%, diff_mean=+0.530°C, diff_std=0.913°C → sample_04_20250303.png
+  [H=09] 完成 | 平均缺失率=36.7%, 平均Diff Std=0.585°C
+
+--- H=10 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h10
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=10] Sample 1: missing=25.5%, diff_mean=-0.896°C, diff_std=0.451°C → sample_01_20240924.png
+  [H=10] Sample 2: missing=22.7%, diff_mean=-0.179°C, diff_std=0.305°C → sample_02_20241117.png
+  [H=10] Sample 3: missing=74.7%, diff_mean=+0.343°C, diff_std=0.439°C → sample_03_20250109.png
+  [H=10] Sample 4: missing=34.0%, diff_mean=+0.372°C, diff_std=0.783°C → sample_04_20250303.png
+  [H=10] 完成 | 平均缺失率=39.2%, 平均Diff Std=0.495°C
+
+--- H=11 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h11
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=11] Sample 1: missing=28.1%, diff_mean=-0.964°C, diff_std=0.383°C → sample_01_20240924.png
+  [H=11] Sample 2: missing=23.4%, diff_mean=-0.140°C, diff_std=0.312°C → sample_02_20241116.png
+  [H=11] Sample 3: missing=90.1%, diff_mean=+0.283°C, diff_std=0.459°C → sample_03_20250109.png
+  [H=11] Sample 4: missing=36.5%, diff_mean=+0.467°C, diff_std=0.837°C → sample_04_20250303.png
+  [H=11] 完成 | 平均缺失率=44.5%, 平均Diff Std=0.498°C
+
+--- H=12 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h12
+  Series: [8]
+  Total frames: 267
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=12] Sample 1: missing=28.5%, diff_mean=-0.941°C, diff_std=0.383°C → sample_01_20240924.png
+  [H=12] Sample 2: missing=22.7%, diff_mean=-0.087°C, diff_std=0.323°C → sample_02_20241116.png
+  [H=12] Sample 3: missing=88.4%, diff_mean=+0.334°C, diff_std=0.465°C → sample_03_20250108.png
+  [H=12] Sample 4: missing=37.4%, diff_mean=+0.607°C, diff_std=0.912°C → sample_04_20250302.png
+  [H=12] 完成 | 平均缺失率=44.2%, 平均Diff Std=0.521°C
+
+--- H=13 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h13
+  Series: [8]
+  Total frames: 267
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=13] Sample 1: missing=28.7%, diff_mean=-0.947°C, diff_std=0.375°C → sample_01_20240924.png
+  [H=13] Sample 2: missing=22.0%, diff_mean=-0.039°C, diff_std=0.291°C → sample_02_20241116.png
+  [H=13] Sample 3: missing=89.5%, diff_mean=+0.327°C, diff_std=0.473°C → sample_03_20250108.png
+  [H=13] Sample 4: missing=38.4%, diff_mean=+0.538°C, diff_std=0.848°C → sample_04_20250302.png
+  [H=13] 完成 | 平均缺失率=44.6%, 平均Diff Std=0.496°C
+
+--- H=14 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h14
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=14] Sample 1: missing=28.5%, diff_mean=-0.890°C, diff_std=0.413°C → sample_01_20240924.png
+  [H=14] Sample 2: missing=21.7%, diff_mean=-0.023°C, diff_std=0.301°C → sample_02_20241117.png
+  [H=14] Sample 3: missing=83.7%, diff_mean=+0.344°C, diff_std=0.453°C → sample_03_20250109.png
+  [H=14] Sample 4: missing=37.3%, diff_mean=+0.617°C, diff_std=0.902°C → sample_04_20250303.png
+  [H=14] 完成 | 平均缺失率=42.8%, 平均Diff Std=0.517°C
+
+--- H=15 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h15
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=15] Sample 1: missing=28.5%, diff_mean=-0.900°C, diff_std=0.372°C → sample_01_20240924.png
+  [H=15] Sample 2: missing=19.5%, diff_mean=-0.085°C, diff_std=0.292°C → sample_02_20241116.png
+  [H=15] Sample 3: missing=91.5%, diff_mean=+0.302°C, diff_std=0.482°C → sample_03_20250108.png
+  [H=15] Sample 4: missing=39.4%, diff_mean=+0.618°C, diff_std=0.845°C → sample_04_20250303.png
+  [H=15] 完成 | 平均缺失率=44.7%, 平均Diff Std=0.498°C
+
+--- H=16 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h16
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=16] Sample 1: missing=17.8%, diff_mean=-0.796°C, diff_std=0.461°C → sample_01_20240923.png
+  [H=16] Sample 2: missing=60.2%, diff_mean=-0.277°C, diff_std=0.376°C → sample_02_20241114.png
+  [H=16] Sample 3: missing=86.6%, diff_mean=+0.286°C, diff_std=0.463°C → sample_03_20250106.png
+  [H=16] Sample 4: missing=66.8%, diff_mean=+0.490°C, diff_std=0.622°C → sample_04_20250228.png
+  [H=16] 完成 | 平均缺失率=57.8%, 平均Diff Std=0.481°C
+
+--- H=17 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h17
+  Series: [8]
+  Total frames: 266
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=17] Sample 1: missing=28.7%, diff_mean=-0.906°C, diff_std=0.402°C → sample_01_20240924.png
+  [H=17] Sample 2: missing=15.0%, diff_mean=-0.060°C, diff_std=0.382°C → sample_02_20241116.png
+  [H=17] Sample 3: missing=94.3%, diff_mean=+0.348°C, diff_std=0.480°C → sample_03_20250108.png
+  [H=17] Sample 4: missing=49.8%, diff_mean=+0.499°C, diff_std=0.728°C → sample_04_20250302.png
+  [H=17] 完成 | 平均缺失率=46.9%, 平均Diff Std=0.498°C
+
+--- H=18 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h18
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=18] Sample 1: missing=17.5%, diff_mean=-0.725°C, diff_std=0.505°C → sample_01_20240923.png
+  [H=18] Sample 2: missing=69.7%, diff_mean=-0.304°C, diff_std=0.403°C → sample_02_20241116.png
+  [H=18] Sample 3: missing=91.1%, diff_mean=+0.299°C, diff_std=0.505°C → sample_03_20250107.png
+  [H=18] Sample 4: missing=66.2%, diff_mean=+0.539°C, diff_std=0.609°C → sample_04_20250228.png
+  [H=18] 完成 | 平均缺失率=61.1%, 平均Diff Std=0.506°C
+
+--- H=19 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h19
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=19] Sample 1: missing=33.0%, diff_mean=-0.885°C, diff_std=0.352°C → sample_01_20240924.png
+  [H=19] Sample 2: missing=11.2%, diff_mean=-0.192°C, diff_std=0.395°C → sample_02_20241117.png
+  [H=19] Sample 3: missing=93.7%, diff_mean=-0.120°C, diff_std=0.523°C → sample_03_20250109.png
+  [H=19] Sample 4: missing=47.0%, diff_mean=+0.687°C, diff_std=0.879°C → sample_04_20250303.png
+  [H=19] 完成 | 平均缺失率=46.2%, 平均Diff Std=0.537°C
+
+--- H=20 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h20
+  Series: [8]
+  Total frames: 264
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=20] Sample 1: missing=16.9%, diff_mean=-0.593°C, diff_std=0.513°C → sample_01_20240923.png
+  [H=20] Sample 2: missing=76.7%, diff_mean=-0.228°C, diff_std=0.384°C → sample_02_20241115.png
+  [H=20] Sample 3: missing=99.8%, diff_mean=+0.274°C, diff_std=0.472°C → sample_03_20250107.png
+  [H=20] Sample 4: missing=71.9%, diff_mean=+0.468°C, diff_std=0.611°C → sample_04_20250228.png
+  [H=20] 完成 | 平均缺失率=66.3%, 平均Diff Std=0.495°C
+
+--- H=21 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h21
+  Series: [8]
+  Total frames: 262
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=21] Sample 1: missing=34.9%, diff_mean=-0.938°C, diff_std=0.388°C → sample_01_20240925.png
+  [H=21] Sample 2: missing=11.8%, diff_mean=-0.271°C, diff_std=0.397°C → sample_02_20241117.png
+  [H=21] Sample 3: missing=94.3%, diff_mean=-0.292°C, diff_std=0.566°C → sample_03_20250109.png
+  [H=21] Sample 4: missing=48.2%, diff_mean=+0.357°C, diff_std=0.662°C → sample_04_20250302.png
+  [H=21] 完成 | 平均缺失率=47.3%, 平均Diff Std=0.503°C
+
+--- H=22 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h22
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=22] Sample 1: missing=31.3%, diff_mean=-0.996°C, diff_std=0.450°C → sample_01_20240924.png
+  [H=22] Sample 2: missing=11.4%, diff_mean=-0.277°C, diff_std=0.518°C → sample_02_20241117.png
+  [H=22] Sample 3: missing=95.0%, diff_mean=-0.190°C, diff_std=0.563°C → sample_03_20250109.png
+  [H=22] Sample 4: missing=48.8%, diff_mean=+0.627°C, diff_std=0.800°C → sample_04_20250303.png
+  [H=22] 完成 | 平均缺失率=46.6%, 平均Diff Std=0.583°C
+
+--- H=23 ---
+
+JAXA Finetune Dataset initialized:
+  Data dir: /data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h23
+  Series: [8]
+  Total frames: 265
+  Window size: 30
+  Mask ratio: 0%
+  Mask size: 0-0
+  Normalize: True (mean=299.92, std=2.69)
+  Cache size: 50
+  [H=23] Sample 1: missing=25.6%, diff_mean=-0.825°C, diff_std=0.480°C → sample_01_20240924.png
+  [H=23] Sample 2: missing=13.2%, diff_mean=-0.140°C, diff_std=0.465°C → sample_02_20241117.png
+  [H=23] Sample 3: missing=94.4%, diff_mean=+0.050°C, diff_std=0.587°C → sample_03_20250109.png
+  [H=23] Sample 4: missing=48.3%, diff_mean=+0.619°C, diff_std=0.845°C → sample_04_20250303.png
+  [H=23] 完成 | 平均缺失率=45.4%, 平均Diff Std=0.594°C
+
+=================================================================
+    小时         平均缺失率   Diff Std (°C)
+----------------------------------------
+  H=01          56.8%           0.539
+  H=02          56.0%           0.513
+  H=03          52.8%           0.576
+  H=04          46.1%           0.553
+  H=05          39.2%           0.565
+  H=06          38.2%           0.575
+  H=07          37.9%           0.568
+  H=08          37.4%           0.581
+  H=09          36.7%           0.585
+  H=10          39.2%           0.495
+  H=11          44.5%           0.498
+  H=12          44.2%           0.521
+  H=13          44.6%           0.496
+  H=14          42.8%           0.517
+  H=15          44.7%           0.498
+  H=16          57.8%           0.481
+  H=17          46.9%           0.498
+  H=18          61.1%           0.506
+  H=19          46.2%           0.537
+  H=20          66.3%           0.495
+  H=21          47.3%           0.503
+  H=22          46.6%           0.583
+  H=23          45.4%           0.594
+----------------------------------------
+  平均          46.9%           0.534
+=================================================================
