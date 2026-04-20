@@ -96,6 +96,44 @@ def masked_gradient_loss(pred, target, loss_mask):
     return total_grad_loss
 
 
+def boundary_smoothness_loss(composed, target, mask_seq):
+    """
+    边界平滑loss：约束mask边界跨越处的预测梯度 ≈ 真实梯度
+    只在mask边界像素对（内侧↔外侧）上计算，不影响内部区域
+
+    Args:
+        composed: (B, 1, H, W) 输出组合结果（已做output_composition）
+        target: (B, 1, H, W) 真值（归一化后）
+        mask_seq: (B, 30, H, W) mask序列
+
+    Returns:
+        loss: scalar
+    """
+    last_mask = mask_seq[:, -1:, :, :]  # (B, 1, H, W)
+
+    # X方向：找跨越边界的相邻像素对
+    # enter_x: mask外 → mask内的边界像素（左侧是海洋，右侧是洞）
+    enter_x = ((last_mask[:, :, :, 1:] == 1) & (last_mask[:, :, :, :-1] == 0)).float()
+    # exit_x: mask内 → mask外的边界像素（左侧是洞，右侧是海洋）
+    exit_x = ((last_mask[:, :, :, :-1] == 1) & (last_mask[:, :, :, 1:] == 0)).float()
+    boundary_x = enter_x + exit_x
+
+    pred_grad_x = composed[:, :, :, 1:] - composed[:, :, :, :-1]
+    target_grad_x = target[:, :, :, 1:] - target[:, :, :, :-1]
+    loss_x = (torch.abs(pred_grad_x - target_grad_x) * boundary_x).sum() / (boundary_x.sum() + 1e-8)
+
+    # Y方向：同理
+    enter_y = ((last_mask[:, :, 1:, :] == 1) & (last_mask[:, :, :-1, :] == 0)).float()
+    exit_y = ((last_mask[:, :, :-1, :] == 1) & (last_mask[:, :, 1:, :] == 0)).float()
+    boundary_y = enter_y + exit_y
+
+    pred_grad_y = composed[:, :, 1:, :] - composed[:, :, :-1, :]
+    target_grad_y = target[:, :, 1:, :] - target[:, :, :-1, :]
+    loss_y = (torch.abs(pred_grad_y - target_grad_y) * boundary_y).sum() / (boundary_y.sum() + 1e-8)
+
+    return (loss_x + loss_y) / 2
+
+
 def output_composition(pred, sst_seq, mask_seq, land_mask=None):
     """
     输出组合：非挖空区域用输入值，挖空区域用模型预测，陆地区域保持输入
@@ -122,8 +160,8 @@ def output_composition(pred, sst_seq, mask_seq, land_mask=None):
     return composed
 
 
-def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None,
-                       alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.1):
+def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
+                       alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.1, alpha_boundary=0.1):
     """
     JAXA微调的组合损失（使用output composition后简化版）
 
@@ -132,12 +170,14 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None,
         target: (B, 1, H, W) 真值（归一化后）
         loss_mask: (B, H, W) Loss区域 = artificial_mask ∩ original_obs_mask
         sst_seq: (B, 30, H, W) 输入SST序列（用于时间连续性）
+        mask_seq: (B, 30, H, W) mask序列（用于边界平滑约束）
         alpha_mse: MSE权重（挖空区域重建）
         alpha_grad: 梯度loss权重
         alpha_temporal: 时间连续性权重
+        alpha_boundary: 边界平滑loss权重
 
     Returns:
-        total_loss, loss_mse, loss_grad
+        total_loss, loss_mse, loss_grad, loss_boundary
     """
     # MSE Loss (在挖空区域 - 重建缺失数据)
     loss_mse = masked_mse_loss(pred, target, loss_mask)
@@ -160,9 +200,15 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None,
     else:
         loss_temporal = torch.tensor(0.0, device=pred.device)
 
-    total_loss = alpha_mse * loss_mse + alpha_grad * loss_grad + alpha_temporal * loss_temporal
+    # 边界平滑约束 (可选)
+    if mask_seq is not None and alpha_boundary > 0:
+        loss_boundary = boundary_smoothness_loss(pred, target, mask_seq)
+    else:
+        loss_boundary = torch.tensor(0.0, device=pred.device)
 
-    return total_loss, loss_mse, loss_grad
+    total_loss = alpha_mse * loss_mse + alpha_grad * loss_grad + alpha_temporal * loss_temporal + alpha_boundary * loss_boundary
+
+    return total_loss, loss_mse, loss_grad, loss_boundary
 
 
 # ============================================================================
@@ -211,12 +257,14 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
         pred = output_composition(pred, sst_seq, mask_seq, land_mask)
 
         # Loss (只在挖空区域计算)
-        loss, loss_mse, loss_grad = jaxa_combined_loss(
+        loss, loss_mse, loss_grad, loss_boundary = jaxa_combined_loss(
             pred, gt_sst, loss_mask,
             sst_seq=sst_seq,
+            mask_seq=mask_seq,
             alpha_mse=1.0,
-            alpha_grad=0.02,
-            alpha_temporal=0.1
+            alpha_grad=0.2,
+            alpha_temporal=0.1,
+            alpha_boundary=0.0
         )
 
         # Backward
@@ -243,7 +291,8 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
             if rank == 0:
                 pbar.set_postfix({
                     'loss': f'{total_loss/n_samples:.4f}',
-                    'MAE': f'{total_mae/n_samples:.3f}K'
+                    'MAE': f'{total_mae/n_samples:.3f}K',
+                    'boundary': f'{loss_boundary.item():.4f}'
                 })
 
     # 同步所有进程
@@ -286,10 +335,12 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
             pred = output_composition(pred, sst_seq, mask_seq, land_mask)
 
             # Loss (只在挖空区域计算)
-            loss, loss_mse, _ = jaxa_combined_loss(
+            loss, loss_mse, _, _ = jaxa_combined_loss(
                 pred, gt_sst, loss_mask,
                 sst_seq=sst_seq,
-                alpha_grad=0  # 验证时不计算梯度loss
+                mask_seq=mask_seq,
+                alpha_grad=0,  # 验证时不计算梯度loss
+                alpha_boundary=0  # 验证时不计算边界loss
             )
 
             # 反归一化
@@ -345,7 +396,7 @@ def train_worker(rank, world_size, config):
         print("="*80)
         print(f"\n配置:")
         print(f"  - 数据目录: {data_dir}")
-        print(f"  - 基座模型(h=0): {pretrained_path}")
+        print(f"  - 基座模型(OSTIA原始): {pretrained_path}")
         print(f"  - 保存目录: {save_dir}")
         print(f"  - Batch size: {batch_size} per GPU × {world_size} GPUs = {batch_size*world_size}")
         print(f"  - Learning rate: {lr}")
@@ -514,7 +565,7 @@ def main():
     # 解析命令行参数
     parser = argparse.ArgumentParser()
     parser.add_argument('--hour', type=int, required=True, help='目标微调的小时 (1-23)')
-    parser.add_argument('--epochs', type=int, default=30, help='微调轮数')
+    parser.add_argument('--epochs', type=int, default=50, help='微调轮数')
     parser.add_argument('--batch-size', type=int, default=2, help='每卡batch size')
     args = parser.parse_args()
 
@@ -523,10 +574,10 @@ def main():
     config = {
         'data_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h{hour_str}',
         'save_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune_h{hour_str}',
-        'pretrained_path': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune/best_model.pth',
+        'pretrained_path': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain/best_model.pth',
         'batch_size': args.batch_size,  # per GPU
         'num_epochs': args.epochs,
-        'lr': 1e-4,  # h=0已经是微调过的，这里lr再小一点，防破坏特征
+        'lr': 5e-4,  # 微调学习率
         'hour': args.hour
     }
 
