@@ -72,23 +72,34 @@ def render_panel(ax, sst_c, land, ocean_mask, lat, lon, vmin, vmax,
 
 
 def render_error_panel(ax, err, ocean, land, mask, lat, lon, vmax_err,
-                       show_y=False, show_x=False, panel_title=None):
+                       show_y=False, show_x=False, panel_title=None,
+                       draw_mask_outline=True):
+    """Render |error| only at mask==1 positions; everywhere else stays white.
+    Optionally draws the mask boundary so the evaluation region is explicit."""
     extent = [lon.min(), lon.max(), lat.min(), lat.max()]
-    # land
+    # 1) land
     land_layer = np.where(land == 1, 1.0, np.nan)
     ax.imshow(land_layer, extent=extent, origin="lower",
               cmap=mpl.colors.ListedColormap([LAND_COLOR]),
               aspect="equal", interpolation="nearest")
-    # ocean (white background outside mask region)
+    # 2) ocean background (white) where NOT in the artificial mask
     bg = np.where((ocean == 1) & (mask == 0), 1.0, np.nan)
     ax.imshow(bg, extent=extent, origin="lower",
               cmap=mpl.colors.ListedColormap(["#fafafa"]),
               aspect="equal", interpolation="nearest")
-    # error
+    # 3) error values only at mask positions
     disp = np.where(mask > 0, np.abs(err), np.nan)
     im = ax.imshow(disp, extent=extent, origin="lower",
                    cmap=CMAPS["error"], vmin=0, vmax=vmax_err,
                    aspect="equal", interpolation="nearest")
+    # 4) Draw the artificial-mask boundary so the evaluation region is explicit
+    if draw_mask_outline and mask.sum() > 0:
+        ax.contour(
+            mask.astype(float),
+            levels=[0.5],
+            colors=["#3b3b3b"], linewidths=0.6, linestyles="-",
+            extent=extent, origin="lower",
+        )
     setup_geo_ax(ax, lon, lat, draw_xlabel=show_x, draw_ylabel=show_y, step=2)
     if not show_x:
         ax.set_xticklabels([])
@@ -144,10 +155,10 @@ def main():
     last_err_im = None
     col_titles = [
         "Masked input",
-        "Original observations",        # SPARSE — only originally observed pixels
-        "KNN baseline",
-        "FNO-CBAM (ours)",
-        "Absolute Error (FNO-CBAM)",
+        "Original observations",                    # sparse — observed only
+        "KNN reconstruction (baseline)",            # not GT — non-DL inpainting
+        "FNO-CBAM reconstruction (ours)",
+        "|Error| at masked positions",              # only evaluated inside mask
     ]
 
     for r, (level_name, c) in enumerate(rows):
@@ -248,10 +259,13 @@ def main():
             show_y=False, show_x=is_bot,
             panel_title=col_titles[4] if is_top else None,
         )
+        n_eval = int((c["mask"] * ocean).sum())
         annotate_metric(
             ax,
-            [f"Max: {c['fno_metrics']['maxv']:.3f} K"],
-            loc="lower left", fontsize=12,
+            [f"MAE: {c['fno_metrics']['mae']:.3f} K",
+             f"Max: {c['fno_metrics']['maxv']:.3f} K",
+             f"n_eval = {n_eval:,} pix"],
+            loc="lower left", fontsize=11,
         )
 
     # SST colorbar — placed in gutter column 4 (between FNO panel and Error panel)
@@ -279,9 +293,9 @@ def main():
     cb_err.outline.set_linewidth(0.6)
 
     fig.suptitle(
-        "Reconstruction comparison: KNN baseline vs FNO-CBAM "
-        "(low / mid / high masking)",
-        fontsize=15, fontweight="bold", y=0.985,
+        "Reconstruction comparison — error evaluated only inside the artificial mask "
+        "(KNN baseline does not see ground truth either)",
+        fontsize=14, fontweight="bold", y=0.985,
     )
     out = OUT_DIR / "fig4_reconstruction.png"
     # Higher DPI for sharper rendering (default style is 300; bump to 360 for fig4)
