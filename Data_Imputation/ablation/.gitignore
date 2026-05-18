@@ -1,0 +1,4 @@
+# Ablation checkpoints are large; keep them local
+experiments/
+__pycache__/
+*.pyc
