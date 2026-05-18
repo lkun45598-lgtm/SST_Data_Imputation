@@ -72,37 +72,35 @@ def render_panel(ax, sst_c, land, ocean_mask, lat, lon, vmin, vmax,
     return im
 
 
-def render_error_panel(ax, err, ocean, land, mask, lat, lon, vmax_err,
-                       cmap_err,
-                       show_y=False, show_x=False, panel_title=None,
-                       draw_mask_outline=False):
-    """Fill the entire ocean with |error|.
+def render_error_panel(ax, err, ocean, land, obs_mask, lat, lon,
+                       vmax_err, cmap_err,
+                       show_y=False, show_x=False, panel_title=None):
+    """Render |error| ONLY where we actually have ground truth.
 
-    - Observed-unmasked pixels: ~0 thanks to Output Composition (FNO returns
-      the input value there) → very pale.
-    - Cloud pixels: |FNO - KNN_fill_reference| (method disagreement, not GT
-      error but plotted on the same scale).
-    - Mask pixels: |FNO - observation|, the real evaluation error.
-    Optionally outline the mask region as a faint dashed contour.
+    GT exists only at originally-observed pixels (obs_mask == 1).
+    - Inside obs_mask AND outside artificial mask: error ~0 (Output Composition)
+    - Inside obs_mask AND inside artificial mask: true |FNO − obs| (real eval)
+    - Cloud pixels (obs_mask == 0): no GT exists → rendered as neutral gray
+    - Land: tan
     """
     extent = [lon.min(), lon.max(), lat.min(), lat.max()]
-    # 1) land
+    # 1) land (tan)
     land_layer = np.where(land == 1, 1.0, np.nan)
     ax.imshow(land_layer, extent=extent, origin="lower",
               cmap=mpl.colors.ListedColormap([LAND_COLOR]),
               aspect="equal", interpolation="nearest")
-    # 2) error over the WHOLE ocean (NaN on land)
-    disp = np.where(ocean == 1, np.abs(err), np.nan)
+    # 2) cloud (ocean ∩ NOT observed) — no GT → neutral gray
+    cloud = (ocean == 1) & (obs_mask == 0)
+    cloud_layer = np.where(cloud, 1.0, np.nan)
+    ax.imshow(cloud_layer, extent=extent, origin="lower",
+              cmap=mpl.colors.ListedColormap([MISSING_OVERLAY]),
+              aspect="equal", interpolation="nearest")
+    # 3) |error| at observed pixels only (where real GT exists)
+    has_gt = (ocean == 1) & (obs_mask == 1)
+    disp = np.where(has_gt, np.abs(err), np.nan)
     im = ax.imshow(disp, extent=extent, origin="lower",
                    cmap=cmap_err, vmin=0, vmax=vmax_err,
                    aspect="equal", interpolation="nearest")
-    # 3) (optional) very subtle mask outline so the eval region is visible
-    if draw_mask_outline and mask.sum() > 0:
-        ax.contour(
-            mask.astype(float), levels=[0.5],
-            colors=["#444"], linewidths=0.4, linestyles="--", alpha=0.55,
-            extent=extent, origin="lower",
-        )
     setup_geo_ax(ax, lon, lat, draw_xlabel=show_x, draw_ylabel=show_y, step=2)
     if not show_x:
         ax.set_xticklabels([])
@@ -161,7 +159,7 @@ def main():
         "Original observations",                    # sparse — observed only
         "KNN reconstruction (baseline)",            # not GT — non-DL inpainting
         "FNO-CBAM reconstruction (ours)",
-        "|FNO − reference SST|",                    # full ocean; eval inside mask
+        "|FNO − GT|  (at observed pixels)",         # ONLY where real GT exists
     ]
 
     for r, (level_name, c) in enumerate(rows):
@@ -253,19 +251,24 @@ def main():
             loc="lower left", fontsize=12,
         )
 
-        # ===== Col 5: error map covers the WHOLE ocean (gs col 5) =====
+        # ===== Col 5: error map over the OBSERVED region only =====
+        # GT exists only where the satellite actually observed SST. Cloud
+        # regions have no real GT and are rendered as gray.
         ax = fig.add_subplot(gs[r, 5])
-        err = fno_c - gt_c   # |FNO - reference| over whole ocean
-        # Per-row vmax based on this row's ocean errors (p99 robust to outliers)
-        row_err_abs = np.abs(err)[ocean == 1]
-        row_vmax = float(np.percentile(row_err_abs, 99))
-        row_vmax = max(row_vmax, 0.25)   # floor so low case isn't all white
+        err = fno_c - gt_c
+        obs_mask = c.get("obs_mask")
+        if obs_mask is None:
+            obs_mask = ocean.astype(np.uint8)   # fallback
+        # Per-row vmax based on errors at observed pixels only
+        has_gt = (ocean == 1) & (obs_mask == 1)
+        row_err_abs = np.abs(err)[has_gt]
+        row_vmax = float(np.percentile(row_err_abs, 99)) if row_err_abs.size > 0 else 0.5
+        row_vmax = max(row_vmax, 0.25)
         last_err_im = render_error_panel(
-            ax, err, ocean, c["land"], (mask * ocean).astype(np.uint8),
+            ax, err, ocean, c["land"], obs_mask,
             c["lat"], c["lon"], row_vmax, err_cmap,
             show_y=False, show_x=is_bot,
             panel_title=col_titles[4] if is_top else None,
-            draw_mask_outline=False,
         )
         n_eval = int((c["mask"] * ocean).sum())
         annotate_metric(
