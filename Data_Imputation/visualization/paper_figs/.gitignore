@@ -1,0 +1,8 @@
+# Override parent Data_Imputation/.gitignore to keep paper figure artifacts.
+!output/
+!output/*.png
+!output/*.pdf
+!cache/
+!cache/*.npz
+!cache/*.json
+__pycache__/
