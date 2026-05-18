@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import cmocean
 from matplotlib.patches import Patch
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -72,32 +73,34 @@ def render_panel(ax, sst_c, land, ocean_mask, lat, lon, vmin, vmax,
 
 
 def render_error_panel(ax, err, ocean, land, mask, lat, lon, vmax_err,
+                       cmap_err,
                        show_y=False, show_x=False, panel_title=None,
-                       draw_mask_outline=True):
-    """Render |error| only at mask==1 positions; everywhere else stays white.
-    Optionally draws the mask boundary so the evaluation region is explicit."""
+                       draw_mask_outline=False):
+    """Fill the entire ocean with |error|.
+
+    - Observed-unmasked pixels: ~0 thanks to Output Composition (FNO returns
+      the input value there) → very pale.
+    - Cloud pixels: |FNO - KNN_fill_reference| (method disagreement, not GT
+      error but plotted on the same scale).
+    - Mask pixels: |FNO - observation|, the real evaluation error.
+    Optionally outline the mask region as a faint dashed contour.
+    """
     extent = [lon.min(), lon.max(), lat.min(), lat.max()]
     # 1) land
     land_layer = np.where(land == 1, 1.0, np.nan)
     ax.imshow(land_layer, extent=extent, origin="lower",
               cmap=mpl.colors.ListedColormap([LAND_COLOR]),
               aspect="equal", interpolation="nearest")
-    # 2) ocean background (white) where NOT in the artificial mask
-    bg = np.where((ocean == 1) & (mask == 0), 1.0, np.nan)
-    ax.imshow(bg, extent=extent, origin="lower",
-              cmap=mpl.colors.ListedColormap(["#fafafa"]),
-              aspect="equal", interpolation="nearest")
-    # 3) error values only at mask positions
-    disp = np.where(mask > 0, np.abs(err), np.nan)
+    # 2) error over the WHOLE ocean (NaN on land)
+    disp = np.where(ocean == 1, np.abs(err), np.nan)
     im = ax.imshow(disp, extent=extent, origin="lower",
-                   cmap=CMAPS["error"], vmin=0, vmax=vmax_err,
+                   cmap=cmap_err, vmin=0, vmax=vmax_err,
                    aspect="equal", interpolation="nearest")
-    # 4) Draw the artificial-mask boundary so the evaluation region is explicit
+    # 3) (optional) very subtle mask outline so the eval region is visible
     if draw_mask_outline and mask.sum() > 0:
         ax.contour(
-            mask.astype(float),
-            levels=[0.5],
-            colors=["#3b3b3b"], linewidths=0.6, linestyles="-",
+            mask.astype(float), levels=[0.5],
+            colors=["#444"], linewidths=0.4, linestyles="--", alpha=0.55,
             extent=extent, origin="lower",
         )
     setup_geo_ax(ax, lon, lat, draw_xlabel=show_x, draw_ylabel=show_y, step=2)
@@ -133,8 +136,8 @@ def main():
     all_concat = np.concatenate(all_gt_c)
     vmin = float(np.percentile(all_concat, 1))
     vmax = float(np.percentile(all_concat, 99))
-    # Error range: shared across cases
-    err_vmax = 0.6
+    # Per-row error vmax (computed inside the row loop using p99 across ocean)
+    err_cmap = cmocean.cm.amp
 
     # ===== Figure =====
     # 3 rows × 7 cols layout:
@@ -145,7 +148,7 @@ def main():
     fig = plt.figure(figsize=(22, 13.5))
     gs = fig.add_gridspec(
         3, 7,
-        width_ratios=[1, 1, 1, 1, 0.12, 1, 0.12],
+        width_ratios=[1, 1, 1, 1, 0.12, 1, 0.10],
         height_ratios=[1, 1, 1],
         hspace=0.10, wspace=0.10,
         left=0.08, right=0.97, top=0.94, bottom=0.05,
@@ -158,7 +161,7 @@ def main():
         "Original observations",                    # sparse — observed only
         "KNN reconstruction (baseline)",            # not GT — non-DL inpainting
         "FNO-CBAM reconstruction (ours)",
-        "|Error| at masked positions",              # only evaluated inside mask
+        "|FNO − reference SST|",                    # full ocean; eval inside mask
     ]
 
     for r, (level_name, c) in enumerate(rows):
@@ -250,14 +253,19 @@ def main():
             loc="lower left", fontsize=12,
         )
 
-        # ===== Col 5: error map (gs col 5; col 4 is colorbar gutter) =====
+        # ===== Col 5: error map covers the WHOLE ocean (gs col 5) =====
         ax = fig.add_subplot(gs[r, 5])
-        err = fno_c - gt_c
+        err = fno_c - gt_c   # |FNO - reference| over whole ocean
+        # Per-row vmax based on this row's ocean errors (p99 robust to outliers)
+        row_err_abs = np.abs(err)[ocean == 1]
+        row_vmax = float(np.percentile(row_err_abs, 99))
+        row_vmax = max(row_vmax, 0.25)   # floor so low case isn't all white
         last_err_im = render_error_panel(
             ax, err, ocean, c["land"], (mask * ocean).astype(np.uint8),
-            c["lat"], c["lon"], err_vmax,
+            c["lat"], c["lon"], row_vmax, err_cmap,
             show_y=False, show_x=is_bot,
             panel_title=col_titles[4] if is_top else None,
+            draw_mask_outline=False,
         )
         n_eval = int((c["mask"] * ocean).sum())
         annotate_metric(
@@ -267,6 +275,18 @@ def main():
              f"n_eval = {n_eval:,} pix"],
             loc="lower left", fontsize=11,
         )
+        # Per-row error colorbar in gs col 6
+        cax_e_holder = fig.add_subplot(gs[r, 6])
+        cax_e_holder.axis("off")
+        pos_e = cax_e_holder.get_position()
+        cax_e = fig.add_axes([pos_e.x0 + pos_e.width * 0.10,
+                              pos_e.y0 + pos_e.height * 0.06,
+                              pos_e.width * 0.45,
+                              pos_e.height * 0.88])
+        cb_e = fig.colorbar(last_err_im, cax=cax_e)
+        cb_e.set_label("|Error| (K)", fontsize=11, labelpad=6)
+        cb_e.ax.tick_params(labelsize=10)
+        cb_e.outline.set_linewidth(0.5)
 
     # SST colorbar — placed in gutter column 4 (between FNO panel and Error panel)
     cax_sst = fig.add_subplot(gs[:, 4])
@@ -280,17 +300,7 @@ def main():
     cb_sst.ax.tick_params(labelsize=12)
     cb_sst.outline.set_linewidth(0.6)
 
-    # Error colorbar — placed in gutter column 6 (after error panel)
-    cax_err = fig.add_subplot(gs[:, 6])
-    cax_err.axis("off")
-    pos = cax_err.get_position()
-    err_axes = fig.add_axes([pos.x0 + pos.width * 0.05,
-                             pos.y0 + pos.height * 0.06,
-                             pos.width * 0.35, pos.height * 0.88])
-    cb_err = fig.colorbar(last_err_im, cax=err_axes, orientation="vertical")
-    cb_err.set_label("|Error| (K)", fontsize=13, labelpad=8)
-    cb_err.ax.tick_params(labelsize=12)
-    cb_err.outline.set_linewidth(0.6)
+    # (Error colorbars are now drawn per-row alongside each error panel.)
 
     fig.suptitle(
         "Reconstruction comparison — error evaluated only inside the artificial mask "
