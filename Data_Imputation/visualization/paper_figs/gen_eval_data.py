@@ -232,6 +232,10 @@ def main():
             mask = gen.generate(eligible.astype(np.float32))
 
             gt = sst_seq[-1].copy()
+            # Save the original observation mask so fig4 can show the TRUE
+            # ground truth panel (sparse, observed-only) rather than the
+            # KNN-completed field.
+            obs_mask_30 = obs_30.astype(np.uint8)
             # FNO prediction
             fno = predict_fno(model, sst_seq, miss_seq, mask,
                               norm_mean, norm_std, device)
@@ -252,7 +256,7 @@ def main():
                 fno_mae=m_fno["mae"], fno_rmse=m_fno["rmse"], fno_max=m_fno["max"],
                 knn_mae=m_knn["mae"], knn_rmse=m_knn["rmse"], knn_max=m_knn["max"],
             )
-            per_sample.append((rec, gt, fno, knn, mask, eval_mask))
+            per_sample.append((rec, gt, fno, knn, mask, eval_mask, obs_mask_30))
             stats_records.append(rec)
 
         # pick median-MAE sample as the representative case
@@ -260,11 +264,12 @@ def main():
             continue
         maes = [p[0]["fno_mae"] for p in per_sample]
         med_pos = int(np.argsort(maes)[len(maes) // 2])
-        rec, gt, fno, knn, mask, eval_mask = per_sample[med_pos]
+        rec, gt, fno, knn, mask, eval_mask, obs_mask_30 = per_sample[med_pos]
         print(f"  representative idx={rec['idx']} ts={rec['ts']} "
               f"fno_mae={rec['fno_mae']:.3f} knn_mae={rec['knn_mae']:.3f}")
         cases[name] = dict(
             gt=gt, fno=fno, knn=knn, mask=mask, eval_mask=eval_mask,
+            obs_mask=obs_mask_30,           # TRUE observed pixels (no KNN fill)
             land=land, lat=lat, lon=lon, ts=rec["ts"], idx=rec["idx"],
             actual_ratio=rec["actual_ratio"],
             fno_metrics=dict(mae=rec["fno_mae"], rmse=rec["fno_rmse"], maxv=rec["fno_max"]),

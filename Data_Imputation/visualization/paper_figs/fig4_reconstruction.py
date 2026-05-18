@@ -32,8 +32,9 @@ def flip_lat_if_descending(case):
     lat = case["lat"]
     if lat[0] > lat[-1]:
         case["lat"] = lat[::-1]
-        for k in ("gt", "fno", "knn", "mask", "eval_mask", "land"):
-            case[k] = case[k][::-1, :]
+        for k in ("gt", "fno", "knn", "mask", "eval_mask", "land", "obs_mask"):
+            if k in case:
+                case[k] = case[k][::-1, :]
     return case
 
 
@@ -142,8 +143,8 @@ def main():
     last_sst_im = None
     last_err_im = None
     col_titles = [
-        "Masked Input",
-        "Ground Truth",
+        "Masked input",
+        "Original observations",        # SPARSE — only originally observed pixels
         "KNN baseline",
         "FNO-CBAM (ours)",
         "Absolute Error (FNO-CBAM)",
@@ -179,12 +180,38 @@ def main():
             fontsize=15, fontweight="bold", color="#222",
         )
 
-        # ===== Col 2: GT =====
+        # ===== Col 2: Original observations =====
+        # True ground truth = pixels where the satellite actually observed SST.
+        # Cloud-covered pixels are gray (no real GT to show); land is tan.
+        # NOTE: gt[obs==1] equals the original observation because the KNN
+        # pipeline only fills non-observed pixels.
         ax = fig.add_subplot(gs[r, 1])
-        render_panel(ax, gt_c, c["land"], ocean, c["lat"], c["lon"], vmin, vmax,
-                     cmap=CMAPS["sst"],
-                     show_y=False, show_x=is_bot,
-                     panel_title=col_titles[1] if is_top else None)
+        obs_mask = c.get("obs_mask")
+        if obs_mask is None:
+            # Backward compat — fall back to fully-filled panel
+            render_panel(ax, gt_c, c["land"], ocean, c["lat"], c["lon"], vmin, vmax,
+                         cmap=CMAPS["sst"],
+                         show_y=False, show_x=is_bot,
+                         panel_title=col_titles[1] if is_top else None)
+        else:
+            # Show only pixels that were observed (no KNN-interpolated values)
+            sparse_gt = np.where((obs_mask == 1) & (ocean == 1), gt_c, np.nan)
+            cloud_overlay = (obs_mask == 0) & (ocean == 1)  # ocean but not observed
+            render_panel(
+                ax, sparse_gt, c["land"], ocean, c["lat"], c["lon"], vmin, vmax,
+                cmap=CMAPS["sst"],
+                extra_overlay_mask=cloud_overlay,
+                extra_overlay_color=MISSING_OVERLAY,
+                show_y=False, show_x=is_bot,
+                panel_title=col_titles[1] if is_top else None,
+            )
+            # Add coverage annotation
+            obs_pct = float(((obs_mask == 1) & (ocean == 1)).sum() / max(ocean.sum(), 1) * 100)
+            annotate_metric(
+                ax,
+                [f"obs coverage: {obs_pct:.1f}%"],
+                loc="lower left", fontsize=12,
+            )
 
         # ===== Col 3: KNN baseline =====
         ax = fig.add_subplot(gs[r, 2])
@@ -257,7 +284,9 @@ def main():
         fontsize=15, fontweight="bold", y=0.985,
     )
     out = OUT_DIR / "fig4_reconstruction.png"
-    save_fig(fig, out, also_pdf=True)
+    # Higher DPI for sharper rendering (default style is 300; bump to 360 for fig4)
+    fig.savefig(out, dpi=360, bbox_inches="tight", pad_inches=0.05)
+    fig.savefig(str(out).replace(".png", ".pdf"), bbox_inches="tight", pad_inches=0.05)
     plt.close(fig)
     print(f"Saved: {out}")
 
