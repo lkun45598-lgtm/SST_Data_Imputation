@@ -161,7 +161,7 @@ def output_composition(pred, sst_seq, mask_seq, land_mask=None):
 
 
 def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
-                       alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.1, alpha_boundary=0.1):
+                       alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.0, alpha_boundary=0.1):
     """
     JAXA微调的组合损失（使用output composition后简化版）
 
@@ -263,8 +263,8 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
             mask_seq=mask_seq,
             alpha_mse=1.0,
             alpha_grad=0.2,
-            alpha_temporal=0.1,
-            alpha_boundary=0.0
+            alpha_temporal=0.0,   # temporal loss excluded (ablation: no benefit)
+            alpha_boundary=0.1    # boundary loss (deployed objective)
         )
 
         # Backward
