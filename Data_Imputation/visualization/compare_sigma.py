@@ -36,8 +36,8 @@ def setup_matplotlib():
     plt.rcParams.update(params)
 
 
-def apply_gaussian_filter(sst_data, land_mask, sigma):
-    """应用高斯滤波"""
+def apply_gaussian_filter(sst_data, land_mask, sigma, fill_region=None):
+    """应用高斯滤波(fill_region 给定时只平滑填充区，观测保留原值)"""
     sst = sst_data.copy()
     mask_valid = ~np.isnan(sst) & (land_mask == 0)
     if mask_valid.sum() == 0:
@@ -46,7 +46,8 @@ def apply_gaussian_filter(sst_data, land_mask, sigma):
     mean_val = np.nanmean(sst)
     sst_for_filter[~mask_valid] = mean_val
     filtered = gaussian_filter(sst_for_filter, sigma=sigma)
-    result = np.where(mask_valid, filtered, np.nan)
+    write = mask_valid if fill_region is None else (mask_valid & (fill_region == 1))
+    result = np.where(write, filtered, np.where(mask_valid, sst, np.nan))
     return result
 
 
@@ -88,7 +89,8 @@ def main():
     # 预计算所有滤波结果
     all_results = {'Original': orig_celsius}
     for sigma in SIGMA_VALUES:
-        sst_smoothed = apply_gaussian_filter(sst_filled, land_mask, sigma)
+        sst_smoothed = apply_gaussian_filter(sst_filled, land_mask, sigma,
+                                             fill_region=(missing_mask == 1))
         all_results[f'σ={sigma}'] = sst_smoothed - 273.15
 
     # 创建图 - 1行4列布局

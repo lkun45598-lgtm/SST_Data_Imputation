@@ -62,7 +62,19 @@ DEFAULT_NUM_WORKERS = 32
 # Filter Functions
 # ============================================================
 
-def apply_gaussian_filter(data: np.ndarray, mask: np.ndarray, sigma: float = 1.5) -> np.ndarray:
+def _writeback_region(valid_mask: np.ndarray, fill_mask: np.ndarray) -> np.ndarray:
+    """滤波结果只写回"填充像素"；原始观测像素保持不变。
+
+    fill_mask 语义: 1=时间填充像素(可被平滑), 0=原始观测/缺失(不写回)。
+    fill_mask=None 时退回旧行为(整个有效区写回)——仅供可视化/测试调用。
+    """
+    if fill_mask is None:
+        return valid_mask
+    return valid_mask & (fill_mask == 1)
+
+
+def apply_gaussian_filter(data: np.ndarray, mask: np.ndarray, sigma: float = 1.5,
+                          fill_mask: np.ndarray = None) -> np.ndarray:
     """
     高斯低通滤波 - 工业标准平滑滤波器
 
@@ -96,12 +108,14 @@ def apply_gaussian_filter(data: np.ndarray, mask: np.ndarray, sigma: float = 1.5
     filtered_temp = ndimage.gaussian_filter(temp_data, sigma=sigma, mode='reflect')
 
     # 只保留原始有效区域的滤波结果
-    filtered[valid_mask] = filtered_temp[valid_mask]
+    write = _writeback_region(valid_mask, fill_mask)
+    filtered[write] = filtered_temp[write]
 
     return filtered
 
 
-def apply_median_filter(data: np.ndarray, mask: np.ndarray, size: int = 3) -> np.ndarray:
+def apply_median_filter(data: np.ndarray, mask: np.ndarray, size: int = 3,
+                        fill_mask: np.ndarray = None) -> np.ndarray:
     """
     中值滤波 - 去除椒盐噪声和异常值
 
@@ -133,12 +147,14 @@ def apply_median_filter(data: np.ndarray, mask: np.ndarray, size: int = 3) -> np
     filtered_temp = ndimage.median_filter(temp_data, size=size, mode='reflect')
 
     # 只保留有效区域
-    filtered[valid_mask] = filtered_temp[valid_mask]
+    write = _writeback_region(valid_mask, fill_mask)
+    filtered[write] = filtered_temp[write]
 
     return filtered
 
 
-def apply_uniform_filter(data: np.ndarray, mask: np.ndarray, size: int = 3) -> np.ndarray:
+def apply_uniform_filter(data: np.ndarray, mask: np.ndarray, size: int = 3,
+                         fill_mask: np.ndarray = None) -> np.ndarray:
     """
     均值滤波（移动平均）- 简单快速的平滑滤波
 
@@ -168,13 +184,15 @@ def apply_uniform_filter(data: np.ndarray, mask: np.ndarray, size: int = 3) -> n
     # 应用均值滤波
     filtered_temp = ndimage.uniform_filter(temp_data, size=size, mode='reflect')
 
-    filtered[valid_mask] = filtered_temp[valid_mask]
+    write = _writeback_region(valid_mask, fill_mask)
+    filtered[write] = filtered_temp[write]
 
     return filtered
 
 
 def apply_bilateral_filter(data: np.ndarray, mask: np.ndarray,
-                           sigma_space: float = 1.5, sigma_color: float = 2.0) -> np.ndarray:
+                           sigma_space: float = 1.5, sigma_color: float = 2.0,
+                           fill_mask: np.ndarray = None) -> np.ndarray:
     """
     双边滤波 - 保边平滑滤波器
 
@@ -219,7 +237,8 @@ def apply_bilateral_filter(data: np.ndarray, mask: np.ndarray,
     # 混合：边缘保留原值，平滑区域用滤波值
     filtered_temp = edge_weight * temp_data + (1 - edge_weight) * gaussian_filtered
 
-    filtered[valid_mask] = filtered_temp[valid_mask]
+    write = _writeback_region(valid_mask, fill_mask)
+    filtered[write] = filtered_temp[write]
 
     return filtered
 
@@ -246,23 +265,27 @@ def filter_single_frame(args: Tuple) -> Tuple[int, np.ndarray]:
     处理单帧的滤波
 
     Args:
-        args: (frame_idx, sst_frame, missing_mask, method, params)
+        args: (frame_idx, sst_frame, missing_mask, method, params, fill_mask)
+              fill_mask 用于保护原始观测: 只对时间填充像素写回滤波值。
 
     Returns:
         (frame_idx, filtered_frame)
     """
-    frame_idx, sst_frame, missing_mask, method, params = args
+    frame_idx, sst_frame, missing_mask, method, params, fill_mask = args
 
     filter_func = get_filter_function(method)
 
     if method == 'gaussian':
-        filtered = filter_func(sst_frame, missing_mask, sigma=params.get('sigma', 1.5))
+        filtered = filter_func(sst_frame, missing_mask, sigma=params.get('sigma', 1.5),
+                               fill_mask=fill_mask)
     elif method in ['median', 'uniform']:
-        filtered = filter_func(sst_frame, missing_mask, size=params.get('size', 3))
+        filtered = filter_func(sst_frame, missing_mask, size=params.get('size', 3),
+                               fill_mask=fill_mask)
     elif method == 'bilateral':
         filtered = filter_func(sst_frame, missing_mask,
                               sigma_space=params.get('sigma_space', 1.5),
-                              sigma_color=params.get('sigma_color', 2.0))
+                              sigma_color=params.get('sigma_color', 2.0),
+                              fill_mask=fill_mask)
     else:
         filtered = sst_frame.copy()
 
@@ -328,7 +351,7 @@ def process_series(input_path: Path, output_path: Path,
     # 准备并行任务
     tasks = []
     for t in range(T):
-        tasks.append((t, sst_data[t], missing_mask[t], method, params))
+        tasks.append((t, sst_data[t], missing_mask[t], method, params, fill_mask[t]))
 
     # 并行处理
     filtered_sst_data = np.zeros_like(sst_data)

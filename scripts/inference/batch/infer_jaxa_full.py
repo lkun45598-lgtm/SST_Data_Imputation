@@ -58,8 +58,13 @@ def parse_timestamp(ts_str: str):
     return dt.strftime("%Y%m"), dt.strftime("%d"), dt.strftime("%Y%m%d%H%M%S")
 
 
-def apply_gaussian(sst_celsius, land_mask, sigma=GAUSSIAN_SIGMA):
-    """NaN填均值 → gaussian_filter → 恢复NaN（与postprocessing/gaussian_filter.py一致）"""
+def apply_gaussian(sst_celsius, land_mask, fill_region=None, sigma=GAUSSIAN_SIGMA):
+    """NaN填均值 → gaussian_filter → 恢复NaN。
+
+    fill_region: 允许被平滑的区域(=模型填充的云区, 1=可平滑)。只在该区写回滤波值，
+                 原始观测区保持原值(真值不被滤波)。None 时退回旧行为(整场平滑)。
+    高斯卷积输入仍用整场(含观测)，使云区能借真值邻居平滑，但结果不覆盖观测。
+    """
     sst = sst_celsius.copy()
     valid = ~np.isnan(sst) & (land_mask == 0)
     if valid.sum() == 0:
@@ -67,7 +72,12 @@ def apply_gaussian(sst_celsius, land_mask, sigma=GAUSSIAN_SIGMA):
     tmp = sst.copy()
     tmp[~valid] = np.nanmean(sst)
     filtered = gaussian_filter(tmp, sigma=sigma)
-    return np.where(valid, filtered, np.nan)
+    if fill_region is None:
+        write = valid
+    else:
+        write = valid & (fill_region == 1)
+    # 写回区用滤波值；其余(观测/陆地)保留原值(观测=原合成值, 陆地已为NaN)
+    return np.where(write, filtered, sst)
 
 
 TIME_UNITS    = 'seconds since 1981-01-01 00:00:00'
@@ -232,8 +242,10 @@ def run_hour(hour: int, device, batch_size: int):
                     sst_model = np.where(orig_miss == 1, pred_k, knn_k)
                     sst_model = np.where(land == 1, np.nan, sst_model)  # 陆地置NaN
 
-                    # 高斯滤波
-                    sst_model = apply_gaussian(sst_model, land)
+                    # 高斯滤波:平滑所有"重建"像素(云区 + 时间回填,都是合成的),
+                    # 只保留当前时刻的真实观测(original_obs_mask)不动 -> 重建区连续无接缝
+                    not_obs = (obs_all[t] == 0)
+                    sst_model = apply_gaussian(sst_model, land, fill_region=not_obs)
 
                     # 保存NC（仅保存模型填充+滤波后的海温）
                     yyyymm, dd, fname = parse_timestamp(timestamps[t])

@@ -128,7 +128,7 @@ class SquareMaskGenerator:
 # Gaussian Filter
 # ============================================================================
 
-def apply_gaussian_filter_sst(sst_data, land_mask, sigma=1.0):
+def apply_gaussian_filter_sst(sst_data, land_mask, sigma=1.0, fill_region=None):
     """
     对SST数据应用高斯滤波
 
@@ -151,7 +151,9 @@ def apply_gaussian_filter_sst(sst_data, land_mask, sigma=1.0):
     sst_for_filter[~mask_valid] = mean_val
 
     filtered = gaussian_filter(sst_for_filter, sigma=sigma)
-    result = np.where(mask_valid, filtered, np.nan)
+    # 只在填充区(fill_region)写回滤波值；观测保留原值，陆地保持NaN
+    write = mask_valid if fill_region is None else (mask_valid & (fill_region == 1))
+    result = np.where(write, filtered, np.where(mask_valid, sst, np.nan))
 
     return result
 
@@ -551,7 +553,8 @@ def main():
 
         # 高斯滤波后处理
         if APPLY_GAUSSIAN_FILTER:
-            pred_sst = apply_gaussian_filter_sst(pred_sst, land_mask, sigma=GAUSSIAN_SIGMA)
+            pred_sst = apply_gaussian_filter_sst(pred_sst, land_mask, sigma=GAUSSIAN_SIGMA,
+                                                 fill_region=(artificial_mask > 0))
 
         # 计算指标 - 只在人工挖空区域（原始观测区域内）
         eval_mask = artificial_mask * original_obs_mask * (1 - land_mask)

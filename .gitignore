@@ -8,3 +8,13 @@ scripts/inference/single/
 scripts/testing/
 scripts/training/train_debug.py
 scripts/training/train_single_gpu.py
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Local Codex / agents config
+.codex/
+AGENTS.md
+.planning/
+METHODOLOGY_backup.md

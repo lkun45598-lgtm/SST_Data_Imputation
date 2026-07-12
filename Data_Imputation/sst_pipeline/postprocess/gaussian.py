@@ -11,7 +11,8 @@ from typing import Optional
 
 def apply_gaussian_filter(sst_data: np.ndarray,
                           land_mask: np.ndarray,
-                          sigma: float = 1.0) -> np.ndarray:
+                          sigma: float = 1.0,
+                          fill_region: np.ndarray = None) -> np.ndarray:
     """
     对SST数据应用高斯滤波
 
@@ -39,8 +40,13 @@ def apply_gaussian_filter(sst_data: np.ndarray,
     # 应用高斯滤波
     filtered = gaussian_filter(sst_for_filter, sigma=sigma)
 
-    # 只在有效区域使用滤波结果
-    result = np.where(mask_valid, filtered, np.nan)
+    # 只在填充区(fill_region)写回滤波值；原始观测保留原值，陆地/无效保持NaN。
+    # fill_region=None 时退回旧行为(整个有效区写回)。
+    if fill_region is None:
+        write = mask_valid
+    else:
+        write = mask_valid & (fill_region == 1)
+    result = np.where(write, filtered, np.where(mask_valid, sst, np.nan))
 
     return result
 
@@ -59,13 +65,16 @@ class GaussianPostProcessor:
         self.sigma = sigma
         self.enabled = enabled
 
-    def process(self, sst_data: np.ndarray, land_mask: np.ndarray) -> np.ndarray:
+    def process(self, sst_data: np.ndarray, land_mask: np.ndarray,
+                fill_region: np.ndarray = None) -> np.ndarray:
         """
         执行后处理
 
         Args:
             sst_data: SST数据 [H, W]
             land_mask: 陆地mask [H, W]
+            fill_region: 允许平滑的填充区 [H, W] (1=模型填充区)。只在该区写回滤波值，
+                         原始观测保留原值。None 时退回整场平滑(旧行为)。
 
         Returns:
             处理后的SST数据 [H, W]
@@ -73,11 +82,13 @@ class GaussianPostProcessor:
         if not self.enabled:
             return sst_data
 
-        return apply_gaussian_filter(sst_data, land_mask, self.sigma)
+        return apply_gaussian_filter(sst_data, land_mask, self.sigma,
+                                     fill_region=fill_region)
 
-    def __call__(self, sst_data: np.ndarray, land_mask: np.ndarray) -> np.ndarray:
+    def __call__(self, sst_data: np.ndarray, land_mask: np.ndarray,
+                 fill_region: np.ndarray = None) -> np.ndarray:
         """支持直接调用"""
-        return self.process(sst_data, land_mask)
+        return self.process(sst_data, land_mask, fill_region=fill_region)
 
 
 def create_postprocessor(config) -> GaussianPostProcessor:

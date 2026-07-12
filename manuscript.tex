@@ -1,0 +1,842 @@
+\documentclass[12pt,reqno]{amsart}
+%\usepackage{stmaryrd}
+%\usepackage{bbm}
+\usepackage{amsthm}
+\usepackage{cases}
+\usepackage{amscd}
+\usepackage{amsfonts}
+
+% \usepackage{hyperref}
+%\usepackage{mathrsfs}
+\usepackage{amssymb}
+\usepackage{amsmath}
+
+% \usepackage{threeparttable}  % ← 删除或注释这行
+\usepackage{graphicx}  % ← 改为不带 dvipdfmx 选项（如果用 pdflatex）
+\usepackage{booktabs}
+%新加
+\usepackage{makecell}
+\usepackage{adjustbox}
+\usepackage{subcaption}
+\usepackage[percent]{overpic}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{bm}
+\usepackage[utf8]{inputenc}   % 让 pdfLaTeX 以 UTF-8 读取源文件
+\usepackage[T1]{fontenc}      % 推荐的字体编码
+\usepackage{textcomp}         % 补充一些文本符号
+\usepackage{newunicodechar}
+\usepackage{mathtools}
+\newunicodechar{≥}{\ensuremath{\geq}}
+\newunicodechar{≤}{\ensuremath{\leq}}
+\newunicodechar{–}{\textendash}      % 或者 \ensuremath{-}
+\newunicodechar{：}{:}
+\DeclareUnicodeCharacter{2212}{\ensuremath{-}}
+
+
+
+%\usepackage{cite}
+\DeclareGraphicsRule{.bmp}{bmp}{}{} %Insert a kind of figure named .bmp into the text and the bmp files convert from files .jpg
+\DeclareGraphicsRule{.jpg}{eps}{}{} %Insert a kind of figure named .jpg into the text and the jpeg files come from Matlab
+
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+%\DeclareGraphicsRule{.eps}{eps}{.eps}{}
+%\usepackage[dvips,usenames]{color}
+%\usepackage{subfigure}
+%\usepackage{subfig}
+\usepackage{algorithm}
+%\usepackage{algorithmic}
+\usepackage{algpseudocode}
+\renewcommand{\algorithmicrequire}
+
+
+%%%%%%%%%%%%%%
+\usepackage{cleveref}
+\usepackage{color}
+\usepackage{datetime}
+
+\def\red{\textcolor{red}}
+\def\tb{\textcolor{blue}}
+\def\tg{\textcolor{green}}
+%\usepackage[notref,notcite]{showkeys}
+\allowdisplaybreaks
+
+\makeatletter
+\newcommand\figcaption{\def\@captype{figure}\caption}
+\newcommand\tabcaption{\def\@captype{table}\caption}
+\makeatother
+
+\oddsidemargin=0.1in \evensidemargin=0.1in
+
+\renewcommand{\baselinestretch}{1.2}
+%\textheight=25truecm
+%\textwidth=18truecm
+\usepackage{geometry}
+\geometry{left=2cm,right=2cm,top=2cm,bottom=2cm}
+\usepackage{algorithm}
+\usepackage{multirow}
+\usepackage{mathrsfs}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\thepage}
+%\renewcommand{}{}
+%\renewcommand{\theequation}{\thesection.\arabic{equation}}
+\renewcommand{\theequation}{\thesection.\arabic{equation}}
+%----------------------------------------------------------------
+
+
+\newtheorem{sch}{Scheme}
+\newtheorem{remark}{Remark}
+\newtheorem{theorem}{Theorem}
+\newcommand{\beq}{\begin{equation}}
+\newcommand{\eeq}{\end{equation}}
+\newcommand{\bea}{\begin{eqnarray}}
+\newcommand{\eea}{\end{eqnarray}}
+\newcommand{\beas}{\begin{eqnarray*}}
+\newcommand{\eeas}{\end{eqnarray*}}
+\newcommand{\integer}{\mbox{$\mathrm{Z\!\!Z}$}}
+\newcommand{\real}{\mbox{$\mathrm{I\!R}$}}
+\newcommand{\Natural}{\mbox{$\mathrm{I\!N}$}}
+\newcommand{\Grad}{\ensuremath{\nabla}}
+\newcommand{\bfe}{\ensuremath{\mathbf{e}}}
+\newcommand{\bff}{\ensuremath{\mathbf{f}}}
+\newcommand{\bfn}{\ensuremath{\mathbf{n}}}
+\newcommand{\bfw}{\ensuremath{\mathbf{w}}}
+\newcommand{\bfx}{\ensuremath{\mathbf{x}}}
+\newcommand{\bfy}{\ensuremath{\mathbf{y}}}
+\newcommand{\bfu}{\ensuremath{\mathbf{u}}}
+\newcommand{\bfv}{\ensuremath{\mathbf{v}}}
+\newcommand{\bfF}{\ensuremath{\mathbf{F}}}
+\newcommand{\bfQ}{\ensuremath{\mathbf{Q}}}
+%\newcommand{\dd}{\ensuremath{\acute d}}
+\newcommand{\mcA}{\ensuremath{\mathcal{A}}}
+\newcommand{\mcD}{\ensuremath{\mathcal{D}}}
+\newcommand{\mcF}{\ensuremath{\mathcal{F}}}
+\newcommand{\mcT}{\ensuremath{\mathcal{T}}}
+\newcommand{\bbA}{\ensuremath{\mathbb{A}}}
+\newcommand{\bbB}{\ensuremath{\mathbb{B}}}
+\newcommand{\bbD}{\ensuremath{\mathbb{D}}}
+\newcommand{\mbR}{\ensuremath{\mathbf{R}}}
+\newcommand{\mbU}{\ensuremath{\mathbf{U}}}
+\newcommand{\uh}{\ensuremath{\mathbf{u}}_h}
+\newcommand{\delt}{\ensuremath{\Delta t}}
+\newcommand{\eps}{\ensuremath{\epsilon}}
+\newcommand{\veps}{\ensuremath{\varepsilon}}
+\newcommand{\lm}{\ensuremath{\lambda}}
+\newcommand{\Ups}{\ensuremath{\Upsilon}}
+\newcommand{\bfphi}{\ensuremath{\mathbf{\phi}}}
+\newcommand{\olw}{\ensuremath{\overline{w}}}
+
+
+\newcommand{\orb}{\mathrm{Orb}}
+\newcommand{\fix}{\mathrm{Fix}}
+\newcommand{\pp}{\mathrm{P}}
+\newcommand{\rec}{\mathrm{Rec}}
+\newcommand{\crr}{\mathrm{CR}}
+\newcommand{\intt}{\mathrm{int}}
+\newcommand{\bdd}{\mathrm{bd}}
+\newcommand{\cll}{\mathrm{cl}}
+\newcommand{\bb}{\mathrm{B}}
+\newcommand{\dimh}{\mathrm{dim_{h}}}
+\newcommand{\diamm}{\mathrm{diam}}
+\newcommand{\vall}{\mathrm{val}}
+\newcommand{\vexx}{\mathrm{Vex}}
+\newcommand{\eend}{\mathrm{End}}
+\newcommand{\rr}{\mathrm{R}}
+\newcommand{\brr}{\mathrm{Br}}
+
+
+\newcommand{\css}{C\bbs,\bbs}
+\newcommand{\lcm}{\mathrm{lcm}}
+\newcommand{\uu}{\mathrm{\textbf{u}}}
+\newcommand{\dd}{\mathrm{\textbf{d}}}
+\newcommand{\ww}{\mathrm{\textbf{w}}}
+\newcommand{\ee}{\mathbb{E}}
+\newcommand{\bpsi}{\boldsymbol{\psi}}
+\newcommand{\bphi}{\boldsymbol{\phi}}
+\newcommand{\vv}{\mathrm{\textbf{v}}}
+\newcommand{\bx}{\mathrm{\textbf{x}}}
+\newcommand{\nn}{\textbf{n}}
+
+\begin{document}
+
+\begin{frontmatter}
+
+\title{sst}
+
+\author[a,b]{$\text{Guangtao Zhang}$}
+\author[b,c]{$\text{Guangtao Zhang}$}
+\author{Prof xxx\textsuperscript{a}\corref{cor1}}
+\cortext[cor1]{Corresponding author: xxx@um.edu.mo}
+\address[a]{Department of xxx, Faculty of Science and  Technology, University of Macau, Macau, China}
+\address[b]{Department of xxx, College of xxx, xxx University, Guangdong, China}
+\address[c]{Department of xxx, College of xxx, xxx University, Guangdong, China}
+
+\begin{abstract}
+We develop a...
+\end{abstract}
+\vspace{1cm}
+\begin{keyword}
+Long short-term memory;  Self-adaptive; Automatic differentiation; Partial differential equations; Sub-network; Bi-level optimization problem
+\end{keyword}
+\end{frontmatter}
+
+
+
+
+
+
+\section{Introduction}
+
+High-resolution sea surface temperature (SST) is a fundamental variable for characterizing upper-ocean thermal conditions, air--sea heat exchange, and regional ocean dynamics \cite{ocarroll_2019,deser_2010}. In marginal seas and shelf regions, spatially continuous kilometer-scale SST fields are needed to track fronts and eddies, diagnose coastal upwelling, monitor marine heatwaves, and support regional ocean forecasting \cite{ocarroll_2019,hobday_2016}. Geostationary satellite systems such as Himawari-8 provide high-frequency thermal infrared observations and derived SST products that can resolve subdaily thermal variability at kilometer-scale resolution \cite{bessho2016himawari,kurihara_2016}. Their practical utility, however, is severely constrained by persistent cloud contamination. In the northern South China Sea, cloud-induced data gaps commonly exceed 60--70\% and can approach complete scene loss during the summer monsoon and typhoon season. Under such conditions, SST reconstruction becomes a strongly ill-posed inverse problem rather than a routine interpolation task.
+
+Traditional interpolation and statistical reconstruction methods, particularly objective analysis or optimum interpolation (OI) and EOF-based approaches such as DINEOF, remain widely used because they are conceptually transparent and computationally efficient \cite{reynolds_smith_1994,beckers_rixen_2003,alvera_azcarate_2005}. These methods can perform reasonably well when cloud cover is limited and the missingness pattern is relatively benign. Their limitations become pronounced under extensive and spatially organized occlusion. OI-type schemes rely on prescribed covariance structures and smoothing assumptions, whereas EOF-based reconstructions are constrained by low-rank truncation; as a result, the effective feature resolution of gap-filled SST products can remain substantially coarser than the nominal grid resolution, especially when broad cloud decks interrupt spatial continuity for prolonged periods \cite{alvera_azcarate_2005,chin_2017}. This is especially problematic in coastal and shelf environments, where upwelling filaments, frontal boundaries, and mesoscale eddies are precisely the structures of greatest scientific and practical interest.
+
+Deep learning has therefore become a major direction in SST reconstruction. CNN-based models such as DINCAE and related neural reconstruction frameworks can learn nonlinear mappings from incomplete observations to gap-free SST fields and often outperform classical interpolation when the missingness pattern is moderate \cite{barth_2020_dincae,young_2024}. More recently, masked autoencoder and neural assimilation approaches have improved the exploitation of global context and multiscale information in SST recovery \cite{goh_2024_maesstro,beauchamp_2025}. Nevertheless, architectures dominated by local convolutions or patch-based encoders may still struggle when cloud gaps are both extensive and spatially coherent. This limitation makes neural operators especially attractive, because Fourier Neural Operators (FNOs) model nonlocal spatial dependencies in the spectral domain and are therefore well suited to bridging broad cloud-covered regions while preserving large-scale thermal structure \cite{li_2021_fno}.
+
+A parallel line of work has focused on generative, physics-aware, and auxiliary-data-driven reconstruction. Diffusion-based models such as CARE-SST show that severe missingness can be addressed through conditional generation, often yielding globally coherent fields while explicitly accounting for observation noise \cite{choo_2025_caresst}. Physics-informed reconstruction methods seek to improve physical plausibility by embedding process-aware or physically interpretable structure into the learning framework rather than relying solely on pixel-wise regression \cite{young_2024}. At the same time, reconstruction systems that leverage stable background analyses or multi-source fusion have demonstrated the value of incorporating large-scale prior information from gap-free auxiliary products such as OSTIA and MUR \cite{donlon_2012,good_2020_ostia,chin_2017,beauchamp_2025}. These developments have substantially advanced the field, but they also expose a persistent practical tension: auxiliary gap-free products provide stable background priors, yet they differ from high-resolution satellite observations in spatial resolution, noise characteristics, and missing-data statistics.
+
+Three limitations remain especially important for hourly SST reconstruction under extreme cloud contamination. First, many deep models are trained within a single data domain and therefore lack an explicit mechanism for transferring information from gap-free background fields to highly incomplete satellite observations. Second, models built primarily on local convolution struggle to recover broad thermal structures across massive cloud-covered regions without weakening mesoscale gradients. Third, the temporal structure of high-frequency satellite observations remains underexploited. In practice, hourly SST exhibits strong short-term persistence and a pronounced diurnal cycle, yet many reconstruction pipelines use limited temporal context and minimal preprocessing prior to network inference. As a result, the fields supplied to the network may remain too fragmented to support stable reconstruction in heavily cloud-contaminated scenes.
+
+This study addresses these issues through a causal reconstruction framework for Himawari-8 SST in the northern South China Sea. The framework consists of three components: a causal spatiotemporal enhancement stage that converts severely fragmented observations into dense proxy inputs; an FNO-CBAM reconstruction network that combines global spectral modeling with local feature refinement; and a two-stage transfer-learning strategy in which gap-free OSTIA fields provide large-scale thermal priors before fine-tuning on cloud-contaminated Himawari-8 observations \cite{donlon_2012,good_2020_ostia}. Rather than merely filling gaps numerically, the proposed framework aims to recover spatially coherent and physically credible SST fields under real cloud-contamination conditions while preserving genuine satellite observations exactly where they are available.
+
+The main contributions of this work are summarized as follows:
+
+\begin{enumerate}
+
+\item \textbf{A causal operator-learning framework for SST reconstruction under extreme cloud contamination.}
+We develop a reconstruction framework that combines global spectral modeling and local attention-based refinement, enabling the recovery of broad thermal structures while preserving fronts, eddy boundaries, and other high-gradient mesoscale features.
+
+\item \textbf{A transfer-learning strategy that bridges complete background fields and real incomplete satellite observations.}
+By pre-training on gap-free OSTIA fields and fine-tuning on cloud-contaminated Himawari-8 observations, the proposed framework adapts transferable large-scale thermal priors to the missing-data patterns and observation characteristics of the target domain.
+
+\item \textbf{A causal spatiotemporal enhancement pipeline for highly fragmented hourly SST scenes.}
+We construct dense proxy inputs from severely cloud-contaminated observations using past-only temporal information and spatiotemporal completion, substantially improving input usability and reconstruction stability under real missing-data conditions.
+
+\end{enumerate}
+
+
+
+
+
+
+\section{Study Area and Datasets}
+
+\subsection{Study Area}
+
+The study area covers the northern South China Sea and adjacent waters (15$^\circ$N--24$^\circ$N, 111$^\circ$E--118$^\circ$E). This region is dynamically active and strongly influenced by Kuroshio intrusion through the Luzon Strait, mesoscale eddies, shelf--slope exchange, and coastal upwelling \cite{nan2015kuroshio,wang2003mesoscale}. It is also subject to the East Asian monsoon and frequent tropical cyclones, both of which favor persistent and extensive cloud cover. The combination of energetic upper-ocean variability and severe atmospheric obscuration makes this region a demanding test bed for SST reconstruction under high missingness.
+
+  \begin{figure}[t]\centering
+  \includegraphics[width=\linewidth]{figs/fig1_studyarea.pdf}
+  \caption{\tb{Study area in the northern South China Sea (15--24$^\circ$N, 111--118$^\circ$E).
+  (a) Regional setting with the Luzon Strait and the Kuroshio intrusion pathway.
+  (b) A representative hourly Himawari-8 SST scene, illustrating the extensive
+  cloud-induced data gaps (grey) that routinely exceed 60--70\% of the ocean area.}}
+  \label{fig:study_area}
+  \end{figure}
+
+
+\subsection{Source-domain Background Dataset: OSTIA}
+
+For source-domain pre-training, we use the Operational Sea Surface Temperature and Sea Ice Analysis (OSTIA) product \cite{donlon_2012,good_2020_ostia}. OSTIA provides daily, gap-free foundation SST fields on a regular 0.05$^\circ$ grid. In this study, records from 1991 to 2021 are used to supply a long temporal archive from which the model can learn stable large-scale thermal structure, seasonal variability, and low-frequency spatiotemporal patterns.
+
+It is important to distinguish the role of OSTIA from that of the target-domain satellite observations. Because OSTIA is spatially complete and does not contain realistic cloud-induced missingness, it is not used as a surrogate for the Himawari-8 observation process. Instead, it serves as a source domain for pre-training under artificial masking, allowing the model to acquire transferable large-scale thermal priors before adaptation to real cloud-contaminated satellite data.
+
+\subsection{Target-domain Observation Dataset: Himawari-8 SST}
+
+The target domain is the hourly SST product derived from the Advanced Himawari Imager on board Himawari-8 and distributed by JAXA \cite{bessho2016himawari, kurihara_2016}. This dataset provides observations at 2~km spatial resolution and therefore preserves much richer subdaily thermal variability than daily Level-4 analyses. The Himawari-8 dataset used in this study spans July 2016 to March 2025.
+
+Cloud contamination is severe over the study region. Based on the current dataset statistics, the annual mean missing rate is 68.67\%, the mean missing rate during June--August reaches 74.45\%, and the 95th-percentile missing rate is 98.92\%. Such scenes cannot be used directly as stable inputs to the reconstruction network. We therefore first apply quality control and then construct dense proxy sequences through the causal spatiotemporal enhancement procedure described in Section~\ref{sec:enhancement}.
+
+The two datasets thus play complementary roles in the proposed framework. OSTIA provides temporally long, spatially complete, coarse-resolution background fields for source-domain pre-training, whereas Himawari-8 provides high-resolution hourly observations with realistic cloud-induced missingness and defines the target reconstruction problem. This distinction is central to the proposed two-stage transfer-learning framework.
+
+
+
+
+
+
+
+
+\section{Methods}
+
+\subsection{Problem Formulation}
+
+Let the study region be discretized on a spatial grid of size $H \times W$. We denote by $T$ the number of input time steps in each sample; in this study, $T=30$. Let $\Delta\tau$ denote the fixed temporal spacing between two adjacent input steps. The underlying complete SST sequence is written as
+\begin{equation}
+\mathbf{Y} \in \mathbb{R}^{T\times H\times W}.
+\end{equation}
+
+Because satellite observations are incomplete, we define a binary observation mask
+\begin{equation}
+\mathbf{M}_{t,i,j}=
+\begin{cases}
+1, & \text{if pixel }(i,j)\text{ at time }t\text{ is observed},\\
+0, & \text{if pixel }(i,j)\text{ at time }t\text{ is missing}.
+\end{cases}
+\end{equation}
+The raw cloud-contaminated observations are then
+\begin{equation}
+\mathbf{X}_{\mathrm{obs}} = \mathbf{Y}\odot\mathbf{M},
+\end{equation}
+where $\odot$ denotes element-wise multiplication.
+
+Under extreme missingness, directly using $\mathbf{X}_{\mathrm{obs}}$ as network input leads to unstable training and weak feature extraction. We therefore construct a dense proxy sequence through a spatiotemporal enhancement operator $\Phi(\cdot)$:
+\begin{equation}
+\mathbf{X}_{\mathrm{pre}} = \Phi(\mathbf{X}_{\mathrm{obs}},\mathbf{M}),
+\end{equation}
+where $\mathbf{X}_{\mathrm{pre}}\in\mathbb{R}^{T\times H\times W}$ contains no missing values.
+
+The reconstruction model takes the proxy SST sequence and its observation mask as input. After concatenation along the channel dimension, the model input is
+\begin{equation}
+\mathcal{X}_{\mathrm{in}} = \mathrm{Concat}(\mathbf{X}_{\mathrm{pre}},\mathbf{M}) \in \mathbb{R}^{2T\times H\times W}.
+\end{equation}
+The network output is the raw reconstruction of the target SST frame at time step $T$:
+\begin{equation}
+\tilde{\mathbf{Y}}_T = \mathcal{F}_{\theta}(\mathcal{X}_{\mathrm{in}}),
+\end{equation}
+where $\mathcal{F}_{\theta}$ denotes the proposed FNO-CBAM model.
+
+To ensure that already observed satellite pixels are preserved exactly, the final reconstructed field is obtained through observation-preserving composition:
+\begin{equation}
+\hat{\mathbf{Y}}_T = \mathbf{X}_{\mathrm{obs},T}\odot\mathbf{M}_T + \tilde{\mathbf{Y}}_T\odot(1-\mathbf{M}_T).
+\label{eq:output_composition}
+\end{equation}
+Equation~\eqref{eq:output_composition} guarantees that the model only replaces genuinely missing pixels at the target time step. During Himawari-8 fine-tuning, the target-time mask in Equation~\eqref{eq:output_composition} is replaced by an effective training mask, as described in Section~\ref{sec:transfer}.
+
+\subsection{Causal Spatiotemporal Enhancement of Cloud-contaminated SST}
+\label{sec:enhancement}
+
+The raw Himawari-8 fields are too fragmented to serve as stable inputs to the reconstruction network. We therefore construct a dense proxy sequence through a causal enhancement pipeline consisting of quality control, past-only temporal filling, causal 3D spatiotemporal KNN completion, and masked Gaussian denoising. Throughout the process, all originally valid satellite observations are retained exactly, and only missing pixels are assigned synthetic values.
+
+\subsubsection{Quality Control}
+
+Before filling and completion, anomalous SST retrievals are removed using a range-based screening rule. In the target region, values below 285~K are treated as invalid because they are typically associated with cloud-detection failures or retrieval artifacts in the raw Himawari-8 product. The observation mask is updated after this screening. Let $\mathbf{M}^{(0)}$ denote the post-QC mask of originally valid Himawari-8 observations.
+
+\subsubsection*{Step 1: Diurnal-aware Causal Temporal Weighted Filling}
+
+The first enhancement step fills missing pixels using historical valid observations at the same spatial location. Let $\mathcal{H}^{-}_{i,j}(t)$ denote the set of valid observations available for pixel $(i,j)$ within a causal lookback window:
+\begin{equation}
+\mathcal{H}^{-}_{i,j}(t)=
+\left\{
+t' \;\middle|\; t-L_1 \le t' \le t,\; \mathbf{M}^{(0)}_{t',i,j}=1
+\right\},
+\end{equation}
+where $L_1$ is the temporal lookback length. In the current implementation, $L_1=48$~h. If $\mathcal{H}^{-}_{i,j}(t)$ is nonempty, the reconstructed value at a missing pixel is computed by a weighted average of historical valid observations:
+\begin{equation}
+\hat{x}^{(1)}_{i,j}(t)=
+\frac{\sum_{t'\in\mathcal{H}^{-}_{i,j}(t)} w(t,t')\,x_{i,j}(t')}
+{\sum_{t'\in\mathcal{H}^{-}_{i,j}(t)} w(t,t')}.
+\end{equation}
+The weights are defined as
+\begin{equation}
+w(t,t')=\frac{1}{(t-t')+\varepsilon}\exp\bigl(-\alpha\,\Delta h(t,t')\bigr),
+\label{eq:temporal_weight}
+\end{equation}
+where $t-t' \ge 0$ is the historical time lag, $\alpha$ is a decay coefficient, and $\varepsilon$ is a small positive constant for numerical stability. Here, $\Delta h(t,t')$ denotes the circular difference in hour-of-day,
+\begin{equation}
+\Delta h(t,t')=
+\min\!\left(\left|h(t)-h(t')\right|,\; 24-\left|h(t)-h(t')\right|\right),
+\end{equation}
+where $h(t)\in\{0,1,\ldots,23\}$ is the hour index of time $t$. In the present implementation, $\alpha=0.5$.
+
+Equation~\eqref{eq:temporal_weight} favors observations that are both temporally recent and aligned with a similar diurnal phase. This is important because standard temporal interpolation can easily alias upper-ocean diurnal warming. If no valid historical observation exists within the 48-h lookback window, the point remains unfilled and is forwarded to the next stage. The resulting temporally filled field provides a first-order proxy estimate and substantially reduces the raw missing rate before spatial completion.
+
+\subsubsection*{Step 2: Causal 3D Spatiotemporal KNN Completion}
+
+Although Step 1 substantially reduces the missing rate, persistent cloud systems still leave large contiguous gaps unresolved. We therefore perform K-nearest-neighbor (KNN) completion in a causal spatiotemporal domain. For a missing spatiotemporal point $\mathbf{p}_i=(t_i,y_i,x_i)$, candidate neighbors are searched only among valid points from the historical window
+\begin{equation}
+\mathcal{N}^{-}_{i}=
+\left\{
+\mathbf{p}_j=(t_j,y_j,x_j)
+\;\middle|\;
+t_i-L_2 \le t_j \le t_i,\;
+\mathbf{p}_j \text{ is valid}
+\right\},
+\end{equation}
+where $L_2=120$~h in the current implementation.
+
+To balance temporal and spatial units, the distance metric is defined as
+\begin{equation}
+D(\mathbf{p}_i,\mathbf{p}_j)=
+\sqrt{
+(x_i-x_j)^2+(y_i-y_j)^2+\left[\gamma_t(t_i-t_j)\right]^2
+},
+\end{equation}
+where $\gamma_t=5/24$ rescales the time axis such that a temporal separation of 24~h is treated as approximately equivalent to a spatial separation of 5 pixels. This scaling compresses the time axis relative to the spatial axes, so that nearby spatial neighbors are generally favored over distant historical neighbors.
+
+For each missing spatiotemporal point, the $K=30$ nearest valid neighbors are retained, and the missing value is estimated by inverse-distance weighting:
+\begin{equation}
+\hat{x}^{(2)}_i=
+\frac{\sum_{k=1}^{K} w_k x_k}{\sum_{k=1}^{K} w_k},
+\qquad
+w_k=\frac{1}{D_k^2+\varepsilon},
+\end{equation}
+where $D_k$ and $x_k$ denote the distance and SST value of the $k$th neighbor, respectively.
+
+To improve continuity over large cloud clusters, the completion is implemented progressively using a density-banding strategy. For each frame, the missing pixels are first grouped according to their local missing-point density within a radius of 20 pixels. The missing region is then partitioned into 16 density bands and filled from lower-density boundary zones toward higher-density interior zones. In each band, newly filled pixels are immediately added to the auxiliary candidate pool and are allowed to support the completion of subsequent interior bands. This edge-to-core progression stabilizes the reconstruction of broad cloud-covered regions because pixels near the cloud boundary are generally better constrained by nearby valid observations.
+
+To further reduce residual gaps, the entire KNN completion is executed in two passes. The first pass produces an initial completed field, and the second pass is applied only to the remaining unresolved points using the updated field from the first pass. In the rare event that a small number of points remain undefined after two passes, they are filled with the global mean SST value to guarantee a fully dense proxy field.
+
+\subsubsection*{Step 3: Masked Gaussian Denoising}
+
+Temporal filling and KNN completion inevitably introduce synthetic values, which can create localized artifacts and artificial micro-scale gradients. To regularize these imputed regions without blurring genuine observations, we apply masked Gaussian denoising with standard deviation $\sigma=1.5$ only over pixels that were not originally valid after quality control:
+\begin{equation}
+\mathbf{X}_{\mathrm{pre}}
+=
+\mathbf{M}^{(0)}\odot\mathbf{X}^{(2)}
++
+(1-\mathbf{M}^{(0)})\odot\left(\mathbf{X}^{(2)} * \mathcal{G}_{\sigma}\right),
+\end{equation}
+where $\mathbf{X}^{(2)}$ denotes the field after causal 3D KNN completion, $\mathcal{G}_{\sigma}$ is a Gaussian kernel, and $*$ denotes convolution. This formulation smooths only the imputed portion of the proxy field and leaves all original Himawari-8 observations unchanged.
+
+  \begin{figure}[t]\centering
+  \includegraphics[width=\linewidth]{figs/fig2_preprocessing.pdf}
+  \caption{\tb{Three-stage causal spatiotemporal enhancement for a high-cloud-cover scene
+  (2018-03-09). Top row: SST fields after raw QC, diurnal-aware temporal weighting,
+  masked low-pass filtering, and causal 3D KNN completion. Bottom row: the corresponding
+  pixel categories (observed, temporally filled, KNN filled, land, missing). Genuine
+  observations are preserved exactly; only missing pixels receive synthetic values.}}
+  \label{fig:preproc}
+  \end{figure}
+
+\subsection{FNO-CBAM Reconstruction Network}
+
+  \begin{figure}[t]\centering
+  \includegraphics[width=\linewidth]{figs/fig3_architecture.pdf}
+  \caption{\tb{FNO-CBAM reconstruction network. Top: the overall pipeline
+  (input $\rightarrow$ lifting $\rightarrow$ six residual FNO blocks $\rightarrow$
+  projection $\rightarrow$ output). Bottom: a single FNO block combining a spectral
+  convolution and a local $1{\times}1$ convolution, followed by a CBAM module (channel
+  and spatial attention), LayerNorm, GELU, and a residual connection.}}
+  \label{fig:arch}
+  \end{figure}
+
+The proxy sequence produced by Section~\ref{sec:enhancement} is mapped to the target SST field using an FNO-CBAM network that combines global spectral modeling with local attention-based feature refinement. Large cloud gaps require nonlocal information transfer across broad spatial scales, whereas coastal fronts, eddies, and upwelling signatures require the preservation of sharp local gradients. The model is implemented as a 2D operator-learning network: temporal information from the $T$ input steps is supplied through channel stacking rather than an explicit recurrent or temporal-convolution module. \tb{Because the target frame is reconstructed from its multi-day history at the same hour (Section~\ref{sec:deploy}), the model always exploits temporal context, even though it emits a single target frame.}
+
+\subsubsection{Input Lifting}
+
+The model input $\mathcal{X}_{\mathrm{in}}\in\mathbb{R}^{2T\times H\times W}$ is first projected into a latent feature space through a point-wise lifting layer:
+\begin{equation}
+\mathbf{v}_0 = \mathcal{P}(\mathcal{X}_{\mathrm{in}}),
+\end{equation}
+where $\mathbf{v}_0\in\mathbb{R}^{d_v\times H\times W}$ and $d_v=64$ in the current implementation. This step maps the concatenated SST--mask channels into a representation suitable for subsequent operator learning.
+
+\subsubsection{Residual Fourier Neural Operator Blocks}
+
+The core of the network is a stack of $L$ residual FNO blocks ($L=6$ in this study). Let $\mathbf{v}_l$ denote the latent feature tensor at block $l$. Each block combines a spectral convolution branch and a local point-wise convolution branch:
+\begin{equation}
+\mathbf{u}_{l+1} = \mathcal{K}_l(\mathbf{v}_l) + \mathcal{W}_l(\mathbf{v}_l),
+\label{eq:fno_block}
+\end{equation}
+where $\mathcal{K}_l(\cdot)$ denotes the Fourier-domain convolution and $\mathcal{W}_l(\cdot)$ denotes a $1\times1$ convolution in physical space.
+
+In the spectral branch, a 2D Fourier transform is applied to $\mathbf{v}_l$, a truncated set of low-frequency modes is multiplied by learnable complex weights, and the resulting spectrum is mapped back to physical space through the inverse Fourier transform. This design allows the network to model broad and nonlocal thermal structure efficiently. The point-wise branch complements the spectral operator by preserving local channel mixing that is useful for fine-scale adjustment.
+
+\subsubsection{CBAM-based Local Feature Refinement}
+
+Because spectral truncation tends to suppress high-frequency gradients, a Convolutional Block Attention Module (CBAM) is inserted after each FNO block to refine feature maps associated with fronts and mesoscale structures. Given the intermediate representation $\mathbf{u}_{l+1}$, channel attention and spatial attention are applied sequentially:
+\begin{equation}
+\mathbf{z}_{l+1} = \mathbf{M}_c(\mathbf{u}_{l+1})\odot\mathbf{u}_{l+1},
+\end{equation}
+\begin{equation}
+\tilde{\mathbf{u}}_{l+1} = \mathbf{M}_s(\mathbf{z}_{l+1})\odot\mathbf{z}_{l+1},
+\end{equation}
+where $\mathbf{M}_c\in\mathbb{R}^{d_v\times1\times1}$ and $\mathbf{M}_s\in\mathbb{R}^{1\times H\times W}$ denote channel-attention and spatial-attention maps, respectively.
+
+The attention-refined representation is integrated through a residual update,
+\begin{equation}
+\mathbf{v}_{l+1} = \mathrm{GELU}\!\left(\mathbf{v}_l + \mathrm{LN}(\tilde{\mathbf{u}}_{l+1})\right),
+\end{equation}
+which improves optimization stability under highly sparse inputs while preserving the advantages of residual feature propagation.
+
+\subsubsection{Output Decoder}
+
+After $L$ FNO-CBAM blocks, the final latent tensor is projected back to the target SST field through a lightweight decoder:
+\begin{equation}
+\mathbf{q} = \mathrm{GELU}\!\left(\mathcal{Q}_1(\mathbf{v}_L)\right),
+\qquad
+\tilde{\mathbf{Y}}_T = \mathcal{Q}_2(\mathbf{q}),
+\end{equation}
+where $\mathcal{Q}_1$ maps the latent representation to an intermediate feature space and $\mathcal{Q}_2$ outputs a single-channel SST prediction. The final reconstructed field $\hat{\mathbf{Y}}_T$ is then obtained using Equation~\eqref{eq:output_composition}.
+
+\subsection{Two-stage Transfer Learning}
+\label{sec:transfer}
+
+A central challenge in this problem is the domain gap between complete background fields and highly incomplete satellite observations. OSTIA provides spatially complete large-scale thermal structure but at coarser resolution and without realistic cloud-induced missingness, whereas Himawari-8 provides high-frequency, high-resolution observations but is heavily fragmented. We therefore adopt a two-stage transfer-learning strategy.
+
+\subsubsection*{Stage I: Pre-training on OSTIA}
+
+In the first stage, the network is pre-trained on the source-domain OSTIA dataset so that it can learn broad thermal structure, large-scale gradients, and stable spatiotemporal evolution patterns under complete-field conditions. Let $\mathbf{Y}^{(s)}$ denote an OSTIA sequence in the source domain. An artificial masking operator $\mathcal{A}(\cdot)$ is applied during pre-training to generate incomplete source samples:
+\begin{equation}
+\mathbf{M}^{(s)} = \mathcal{A}\!\left(\mathbf{Y}^{(s)}\right), \qquad
+\mathbf{X}^{(s)}_{\mathrm{obs}} = \mathbf{Y}^{(s)}\odot \mathbf{M}^{(s)},
+\end{equation}
+\begin{equation}
+\mathbf{X}^{(s)}_{\mathrm{pre}} = \Phi\left(\mathbf{X}^{(s)}_{\mathrm{obs}},\mathbf{M}^{(s)}\right).
+\end{equation}
+In this study, $\mathcal{A}(\cdot)$ is designed to reproduce the empirical missingness characteristics of Himawari-8, including realistic cloud extent and spatial organization, so that source-domain pre-training remains consistent with the target reconstruction setting. The network is then trained to reconstruct the complete target frame from the masked source-domain input. The role of this stage is to learn transferable large-scale thermal priors before the model is exposed to the more difficult observation characteristics of Himawari-8.
+
+\subsubsection*{Stage II: Fine-tuning on Himawari-8}
+
+In the second stage, the pre-trained weights are transferred to the Himawari-8 domain and fine-tuned using the enhanced proxy sequences derived from real satellite observations. Because the original cloud-covered pixels in Himawari-8 do not have direct ground truth, supervised fine-tuning is performed by additionally masking a subset of originally observed pixels. Let $\mathbf{A}_T\in\{0,1\}^{H\times W}$ denote an artificial training mask applied to the observed portion of the target frame. The effective training mask becomes
+\begin{equation}
+\mathbf{M}^{\prime}_T = \mathbf{M}_T\odot(1-\mathbf{A}_T).
+\end{equation}
+Accordingly, the effective observation at the target time is
+\begin{equation}
+\mathbf{X}^{\prime}_{\mathrm{obs},T}=\mathbf{Y}_T\odot \mathbf{M}^{\prime}_T.
+\end{equation}
+
+During fine-tuning, all target-time mask-dependent operations are defined with respect to $\mathbf{M}^{\prime}_T$ rather than the original $\mathbf{M}_T$. Thus, artificially withheld observed pixels are treated as missing by the network but remain available for supervision, whereas the original observation mask $\mathbf{M}_T$ is restored at inference time. In particular, the observation-preserving composition in Equation~\eqref{eq:output_composition} is applied with $\mathbf{M}^{\prime}_T$ during training and with the original $\mathbf{M}_T$ during inference. This strategy allows the model to adapt to the actual noise characteristics, cloud patterns, and regional dynamics of Himawari-8 without discarding the large-scale thermal priors learned from OSTIA.
+
+\subsection{Training Objective}
+
+\tb{The total loss combines pointwise fidelity, gradient preservation, and a
+boundary-focused term:}
+\begin{equation}
+\mathcal{L}_{\mathrm{total}}
+=
+\lambda_1\mathcal{L}_{\mathrm{MSE}}
++
+\lambda_2\mathcal{L}_{\mathrm{grad}}
++
+\lambda_3\mathcal{L}_{\mathrm{bnd}},
+\label{eq:total_loss}
+\end{equation}
+\tb{with $\lambda_1{=}1$, $\lambda_2{=}0.2$, and $\lambda_3{=}0.1$ in this study.}
+Unless otherwise noted, all supervised losses are computed on artificially withheld pixels rather than on originally cloud-covered pixels, which do not have direct reference values.
+
+Let $\Omega_T^{a}$ denote the set of artificially masked pixels in the target frame that were originally observed in Himawari-8 and are therefore available as supervision. The pointwise reconstruction loss is defined as
+\begin{equation}
+\mathcal{L}_{\mathrm{MSE}} =
+\frac{1}{|\Omega_T^{a}|}
+\sum_{(i,j)\in\Omega_T^{a}}
+\left(\hat{Y}_{T,i,j}-Y_{T,i,j}\right)^2.
+\end{equation}
+
+To better preserve fronts and other sharp structures, we further penalize mismatches in horizontal gradients:
+\begin{equation}
+\mathcal{L}_{\mathrm{grad}} =
+\frac{1}{|\Omega_T^{a}|}
+\sum_{(i,j)\in\Omega_T^{a}}
+\left(
+\bigl|\nabla_x\hat{Y}_{T,i,j}-\nabla_x Y_{T,i,j}\bigr|
++
+\bigl|\nabla_y\hat{Y}_{T,i,j}-\nabla_y Y_{T,i,j}\bigr|
+\right),
+\end{equation}
+where $\nabla_x$ and $\nabla_y$ denote finite-difference gradients in the zonal and meridional directions.
+
+\tb{To specifically sharpen the transition between observed and reconstructed
+regions, the boundary term restricts the gradient-matching penalty to pixels
+adjacent to a mask transition. Let $\partial\Omega_T$ denote the set of such
+mask-boundary pixels; the boundary loss is}
+\begin{equation}
+\mathcal{L}_{\mathrm{bnd}}=
+\frac{1}{|\partial\Omega_T|}
+\sum_{(i,j)\in\partial\Omega_T}
+\!\left(\bigl|\nabla_x\hat{Y}_{T,i,j}-\nabla_x Y_{T,i,j}\bigr|
+       +\bigl|\nabla_y\hat{Y}_{T,i,j}-\nabla_y Y_{T,i,j}\bigr|\right).
+\end{equation}
+\tb{We additionally examined a temporal-consistency loss that penalizes the
+mismatch of the day-to-day change $(\hat{Y}_{T}-\hat{Y}_{T-1})-(Y_{T}-Y_{T-1})$
+between consecutive target frames. As reported in Section~\ref{sec:results}
+(ablation), it did not improve per-frame accuracy, boundary accuracy, or even
+the day-to-day change error it targets, and is therefore excluded from the final
+objective.}
+
+During inference, the network output is always converted to the final reconstruction through Equation~\eqref{eq:output_composition} using the original observation mask $\mathbf{M}_T$, so that genuine satellite observations are retained exactly and only missing pixels are replaced by the model estimate.
+
+\subsection{\tb{Per-hour Model Deployment}}
+\label{sec:deploy}
+
+\tb{Because the Himawari-8 archive is organised by hour of day and the diurnal
+cycle induces systematic, hour-dependent thermal structure, we fine-tune one
+instance of the model for each of the 24 hours. Starting from the
+OSTIA-pretrained weights (Stage~I), each hourly model is adapted in Stage~II on
+the enhanced proxy sequences of its own hour, using the identical architecture
+and loss configuration; the input sequence therefore consists of the multi-day
+history at that hour. Unless otherwise noted, the ablation study and the
+single-scene comparisons in Section~\ref{sec:results} are conducted at the
+00:00 hour as a representative setting, whereas the complete 24-model family is
+evaluated jointly in the per-hour analysis (\cref{fig:hourly}).}
+
+
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Quantitative Performance on Extra-masked Pixels}
+
+\tb{Table~\ref{tab:overall} reports reconstruction accuracy on the artificially
+withheld (extra-masked) pixels, under two masking regimes: small scattered masks
+and large contiguous cloud-band masks. Our model attains the lowest error in
+every column. Under small masks it reaches an MAE of 0.130~K, 11\% below the best
+classical interpolator (cubic, 0.146~K) and 37\% below KNN-IDW (0.206~K). Under
+the more realistic large-blob masks the advantage is preserved (MAE 0.193~K vs.\
+0.219~K for the best classical baseline). The predicted values are in close
+agreement with the reference field ($R^2=0.996$) with near-zero bias
+($+0.04$~K), as shown in \cref{fig:errstats}.}
+
+\begin{table}[t]\centering
+\caption{\tb{Reconstruction error on extra-masked pixels (K) at the
+representative 00:00 hour. Lower is better; best in bold.}}
+\label{tab:overall}
+\tb{\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{2}{c}{Small scattered masks} & \multicolumn{2}{c}{Large contiguous masks}\\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Method & MAE & RMSE & MAE & RMSE\\
+\midrule
+Linear interp. & 0.162 & 0.243 & 0.219 & 0.311\\
+Cubic interp.  & 0.146 & 0.269 & 0.243 & 0.428\\
+DINEOF         & 0.802 & 0.954 & 0.843 & 0.991\\
+KNN-IDW        & 0.206 & 0.311 & 0.276 & 0.396\\
+\textbf{FNO-CBAM (ours)} & \textbf{0.130} & \textbf{0.182} & \textbf{0.193} & \textbf{0.265}\\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig6_error_stats.pdf}
+\caption{\tb{Reconstruction error statistics over 60 samples spanning three mask
+levels. (a) Mean absolute error map; (b) error histogram; (c) predicted vs.\
+ground-truth density with the 1:1 line and $R^2$; (d) MAE stratified by scene
+masked fraction.}}
+\label{fig:errstats}
+\end{figure}
+
+\subsection{Performance Stratified by Missing Rate}
+
+\tb{Because average metrics can hide failure modes under extreme cloud cover, we
+stratify accuracy by masked fraction (\cref{fig:comparison}). Our model holds a
+clear advantage under low-to-moderate missingness: for large contiguous masks
+its MAE rises from 0.123~K at $\sim$38\% missing to 0.210~K at $\sim$62\%
+missing, well below every classical baseline. Only under the most extreme
+masking ($\sim$79\%) do the methods converge and simple linear interpolation
+become marginally better (0.216 vs.\ 0.245~K), reflecting the limited
+exploitable signal when almost the entire scene is occluded. DINEOF is unstable
+throughout this high-cloud regime and is shown only as a failure reference.}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig8_comparison.pdf}
+\caption{\tb{Reconstruction accuracy versus masking severity. MAE as a function of
+masked ocean fraction for (a) small scattered masks and (b) large contiguous
+(cloud-band) masks, comparing our model with KNN-IDW, linear, and cubic
+interpolation. DINEOF is far off-scale (values annotated) and shown as a failure
+case. Shaded bands denote the standard error of the mean.}}
+\label{fig:comparison}
+\end{figure}
+
+\subsection{Ablation Experiments}
+
+\tb{We ablate the model components at the representative 00:00 hour, progressively
+adding CBAM (with the gradient loss) and the boundary loss (\cref{fig:ablation}).
+Overall MAE stays essentially flat (within $\pm$1\%), indicating that the added
+terms do not chase pixel-averaged error. Their effect is instead concentrated at
+structural boundaries: boundary-region MAE decreases monotonically by about 20\%
+(19\% for small masks, 21\% for large masks) from FNO-only to the full
+configuration. This is precisely the front-preserving behaviour that aggregate
+MAE under-weights and that the qualitative comparisons
+(\cref{fig:overview,fig:zoom}) make visible. We additionally evaluated a
+temporal-consistency loss on the quantity it is designed to improve---the
+day-to-day change at the same hour---and found no benefit: it altered that error
+by only $-0.3\%$ ($\Delta\approx0.0003$~K, within noise) and left per-frame and
+boundary MAE unchanged, so it is excluded from the final model.}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig9_ablation.pdf}
+\caption{\tb{Component ablation at the representative hour. (a) Overall MAE stays
+flat as components are added; (b) boundary-region MAE drops by $\sim$20\%,
+showing that CBAM and the boundary loss sharpen fronts at negligible
+overall-MAE cost. The temporal-loss variant (rightmost) is shown for
+completeness and is excluded from the final model. Error bars denote the
+standard error of the mean.}}
+\label{fig:ablation}
+\end{figure}
+
+\subsection{Qualitative Reconstruction Examples}
+
+\tb{\cref{fig:overview} shows a representative reconstruction under a 55\%-masked
+scene. Our model attains an MAE of 0.125~K versus 0.164~K for KNN-IDW, and its
+error concentrates along fronts and mask boundaries rather than across the open
+ocean. The zoomed comparison (\cref{fig:zoom}) is more revealing: along the
+20.8$^\circ$N cross-section, KNN over-smooths the thermal front and overshoots
+its amplitude, whereas our reconstruction tracks the observed structure closely
+(zoom-region MAE 0.100~K vs.\ 0.155~K), preserving the filamentary gradients that
+are of primary oceanographic interest.}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig4_overview.pdf}
+\caption{\tb{Representative reconstruction under a MID mask (55\% masked,
+2017-09-11). From left to right: masked input, ground truth, KNN-IDW baseline,
+our FNO-CBAM reconstruction, and the absolute error $|\mathrm{FNO}-\mathrm{GT}|$
+at originally observed pixels. The box marks the region detailed in
+\cref{fig:zoom}.}}
+\label{fig:overview}
+\end{figure}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig5_zoom.pdf}
+\caption{\tb{Zoom into the boxed region of \cref{fig:overview}. Top: KNN, our
+FNO-CBAM, and ground truth on a common SST scale. Bottom: an SST cross-section
+along 20.8$^\circ$N (points: original observations; solid: ours; dashed: KNN).}}
+\label{fig:zoom}
+\end{figure}
+
+\subsection{\tb{Hourly Generalization}}
+
+\tb{To cover the full diurnal range, the configuration validated at 00:00 is
+trained independently for each of the 24 hours (Section~\ref{sec:deploy}).
+\cref{fig:hourly}(a,b) report per-hour accuracy: the models remain stable across
+the day, with modest hour-to-hour variation that tracks the amount of usable
+observations at each hour. The reconstructed mean diurnal SST cycle
+(\cref{fig:hourly}c,d) is phase-consistent with the raw observations and
+reproduces the expected daytime warming, indicating that the 24-model family
+recovers physically coherent subdaily thermal variability rather than a static
+daily field. Because genuinely cloud-covered pixels lack ground truth, these
+temporal diagnostics serve as the primary plausibility check over the originally
+occluded regions.}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\linewidth]{figs/fig7_hourly.pdf}
+\caption{\tb{Per-hour performance of the 24 hourly models. (a) Per-hour MAE and
+(b) per-hour RMSE on extra-masked pixels (error bars: std). (c) Mean diurnal SST
+cycle over the South China Sea and (d) at 19$^\circ$N, 115$^\circ$E (July 2024),
+comparing the reconstruction with raw observations.}}
+\label{fig:hourly}
+\end{figure}
+
+
+\section{Conclusion}
+
+\section*{Acknowledgement}
+This work received support from the xxx under the xxx program. High Performance Computing resources were provided by xxx. Y. W wants to thank ...
+
+\begin{appendices}
+%\section*{Appendix}
+
+\section{Analysis of ...}
+
+
+\end{appendices}
+
+\renewcommand\refname{\vskip -1cm}
+%\section*{References}
+%\def\bibfont{\big}
+%\bibliographystyle{elsarticle-num-names}
+%\bibliographystyle{elsarticle-num}
+%\def\bibfont{\big} % set bibliography font size to small
+
+%\bibliography{reference}
+\renewcommand\refname{\vskip -1cm}
+
+
+\begin{thebibliography}{99}
+
+
+\bibitem{ocarroll_2019}
+O'Carroll, A.~G., Armstrong, E.~M., Beggs, H.~M., Bouali, M., Casey, K.~S., Corlett, G.~K., Dash, P., Donlon, C.~J., Gentemann, C.~L., H{\o}yer, J.~L., et al.,
+``Observational Needs of Sea Surface Temperature,''
+\textit{Frontiers in Marine Science}, vol.~6, 420, 2019.
+
+\bibitem{deser_2010}
+Deser, C., Alexander, M.~A., Xie, S.-P., and Phillips, A.~S.,
+``Sea Surface Temperature Variability: Patterns and Mechanisms,''
+\textit{Annual Review of Marine Science}, vol.~2, pp.~115--143, 2010.
+
+\bibitem{hobday_2016}
+Hobday, A.~J., Alexander, L.~V., Perkins, S.~E., Smale, D.~A., Straub, S.~C., Oliver, E.~C.~J., Benthuysen, J.~A., Burrows, M.~T., Donat, M.~G., Feng, M., et al.,
+``A Hierarchical Approach to Defining Marine Heatwaves,''
+\textit{Progress in Oceanography}, vol.~141, pp.~227--238, 2016.
+
+\bibitem{bessho2016himawari}
+Bessho, K., Date, K., Hayashi, M., Ikeda, A., Imai, T., Inoue, H., Kumagai, Y., Miyakawa, T., Murata, H., Ohno, T., et al.,
+``An Introduction to Himawari-8/9---Japan's New-Generation Geostationary Meteorological Satellites,''
+\textit{Journal of the Meteorological Society of Japan}, vol.~94, no.~2, pp.~151--183, 2016.
+
+\bibitem{kurihara_2016}
+Kurihara, Y., Murakami, H., and Kachi, M.,
+``Sea Surface Temperature from the New Japanese Geostationary Meteorological Himawari-8 Satellite,''
+\textit{Geophysical Research Letters}, vol.~43, no.~3, pp.~1234--1240, 2016.
+
+\bibitem{reynolds_smith_1994}
+Reynolds, R.~W., and Smith, T.~M.,
+``Improved Global Sea Surface Temperature Analyses Using Optimum Interpolation,''
+\textit{Journal of Climate}, vol.~7, no.~6, pp.~929--948, 1994.
+
+\bibitem{beckers_rixen_2003}
+Beckers, J.-M., and Rixen, M.,
+``EOF Calculations and Data Filling from Incomplete Oceanographic Datasets,''
+\textit{Journal of Atmospheric and Oceanic Technology}, vol.~20, no.~12, pp.~1839--1856, 2003.
+
+\bibitem{alvera_azcarate_2005}
+Alvera-Azc\'arate, A., Barth, A., Rixen, M., and Beckers, J.-M.,
+``Reconstruction of Incomplete Oceanographic Data Sets Using Empirical Orthogonal Functions: Application to the Adriatic Sea Surface Temperature,''
+\textit{Ocean Modelling}, vol.~9, no.~4, pp.~325--346, 2005.
+
+\bibitem{chin_2017}
+Chin, T.~M., Vazquez-Cuervo, J., and Armstrong, E.~M.,
+``A Multi-Scale High-Resolution Analysis of Global Sea Surface Temperature,''
+\textit{Remote Sensing of Environment}, vol.~200, pp.~154--169, 2017.
+
+\bibitem{barth_2020_dincae}
+Barth, A., Alvera-Azc\'arate, A., Licer, M., and Beckers, J.-M.,
+``DINCAE 1.0: A Convolutional Neural Network with Error Estimates to Reconstruct Sea Surface Temperature Satellite Observations,''
+\textit{Geoscientific Model Development}, vol.~13, pp.~1609--1622, 2020.
+
+\bibitem{young_2024}
+Young, C.-C., Cheng, Y.-C., Lee, M.-A., and Wu, J.-H.,
+``Accurate Reconstruction of Satellite-Derived SST under Cloud and Cloud-Free Areas Using a Physically-Informed Machine Learning Approach,''
+\textit{Remote Sensing of Environment}, vol.~313, 114339, 2024.
+
+\bibitem{goh_2024_maesstro}
+Goh, E., Yepremyan, A., Wang, J., and Wilson, B.,
+``MAESSTRO: Masked Autoencoders for Sea Surface Temperature Reconstruction under Occlusion,''
+\textit{Ocean Science}, vol.~20, pp.~1309--1323, 2024.
+
+\bibitem{beauchamp_2025}
+Beauchamp, M., Karagali, I., Gacit\'ua, G., H{\o}yer, J.~L., Ballarotta, M., and Fablet, R.,
+``Multiscale Neural Assimilation Scheme for High-Resolution Sea Surface Temperature Reconstruction from Satellite Observations,''
+\textit{Scientific Reports}, vol.~15, 39928, 2025.
+
+\bibitem{li_2021_fno}
+Li, Z., Kovachki, N., Azizzadenesheli, K., Liu, B., Bhattacharya, K., Stuart, A., and Anandkumar, A.,
+``Fourier Neural Operator for Parametric Partial Differential Equations,''
+\textit{International Conference on Learning Representations (ICLR)}, 2021.
+
+\bibitem{choo_2025_caresst}
+Choo, M., Jung, S., Im, J., and Han, D.,
+``CARE-SST: Context-Aware Reconstruction Diffusion Model for Sea Surface Temperature,''
+\textit{ISPRS Journal of Photogrammetry and Remote Sensing}, vol.~220, pp.~454--472, 2025.
+
+
+\bibitem{nan2015kuroshio}
+Nan, F., Xue, H., and Yu, F.,
+``Kuroshio intrusion into the South China Sea: A review,''
+\textit{Progress in Oceanography}, vol.~137, pp.~314--333, 2015.
+
+\bibitem{wang2003mesoscale}
+Wang, G., Su, J., and Chu, P.~C.,
+``Mesoscale eddies in the South China Sea observed with altimeter data,''
+\textit{Geophysical Research Letters}, vol.~30, no.~21, 2003.
+
+\bibitem{donlon_2012}
+Donlon, C.~J., Martin, M., Stark, J., Roberts-Jones, J., Fiedler, E., and Wimmer, W.,
+``The Operational Sea Surface Temperature and Sea Ice Analysis (OSTIA) System,''
+\textit{Remote Sensing of Environment}, vol.~116, pp.~140--158, 2012.
+
+\bibitem{good_2020_ostia}
+Good, S., Fiedler, E., Mao, C., Martin, M.~J., Maycock, A., Reid, R., Roberts-Jones, J., Searle, T., Waters, J., and While, J.,
+``The Current Configuration of the OSTIA System for Operational Production of Foundation Sea Surface Temperature and Ice Concentration Analyses,''
+\textit{Remote Sensing}, vol.~12, no.~4, 720, 2020.
+
+
+
+\end{thebibliography}
+
+
+\end{document}
