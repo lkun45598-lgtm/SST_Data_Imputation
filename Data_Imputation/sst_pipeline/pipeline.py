@@ -107,7 +107,9 @@ class Pipeline:
 
         composed = prediction_result['composed']
         land_mask = prediction_result['land_mask']
-        gaussian_filtered = self.postprocessor(composed, land_mask)
+        # 只平滑模型填充区，保留原始观测真值不被滤波
+        fill_mask = prediction_result.get('fill_mask')
+        gaussian_filtered = self.postprocessor(composed, land_mask, fill_region=fill_mask)
 
         # 组装结果
         result = {

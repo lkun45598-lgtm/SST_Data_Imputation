@@ -84,7 +84,8 @@ class SquareMaskGenerator:
         return artificial
 
 
-def gauss_filter(sst, land_mask, sigma):
+def gauss_filter(sst, land_mask, sigma, fill_region=None):
+    """fill_region 给定时只在该区(填充/masked区)写回滤波值，观测保留原值。"""
     valid = ~np.isnan(sst) & (land_mask == 0)
     if valid.sum() == 0:
         return sst
@@ -92,7 +93,8 @@ def gauss_filter(sst, land_mask, sigma):
     fill = sst.copy()
     fill[~valid] = mean_v
     out = gaussian_filter(fill, sigma=sigma)
-    return np.where(valid, out, np.nan)
+    write = valid if fill_region is None else (valid & (fill_region == 1))
+    return np.where(write, out, np.where(valid, sst, np.nan))
 
 
 def load_hourly_model(hour, device):
@@ -172,7 +174,7 @@ def eval_per_hour(device):
             mask = gen.generate(eligible.astype(np.float32))
             gt = sst_seq[-1].copy()
             pred = predict_fno(model, sst_seq, miss_seq, mask, mean, std, device)
-            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA)
+            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
             eval_m = (mask * eligible).astype(bool)
             if eval_m.sum() == 0:
                 continue

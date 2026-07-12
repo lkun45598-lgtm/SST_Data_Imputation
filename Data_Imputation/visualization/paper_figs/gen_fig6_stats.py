@@ -19,6 +19,7 @@ DATA_IMPUTATION_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(DATA_IMPUTATION_DIR))
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
 
+# Paper "Ours" = deployed hour-00 model (experiments/jaxa_finetune).
 KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
 MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
 CACHE_DIR = Path(__file__).parent / "cache"
@@ -80,7 +81,8 @@ class SquareMaskGenerator:
         return artificial
 
 
-def gauss_filter(sst, land_mask, sigma):
+def gauss_filter(sst, land_mask, sigma, fill_region=None):
+    """fill_region 给定时只在该区(填充/masked区)写回滤波值，观测保留原值。"""
     valid = ~np.isnan(sst) & (land_mask == 0)
     if valid.sum() == 0:
         return sst
@@ -88,7 +90,8 @@ def gauss_filter(sst, land_mask, sigma):
     fill = sst.copy()
     fill[~valid] = mean_v
     out = gaussian_filter(fill, sigma=sigma)
-    return np.where(valid, out, np.nan)
+    write = valid if fill_region is None else (valid & (fill_region == 1))
+    return np.where(write, out, np.where(valid, sst, np.nan))
 
 
 def predict_fno(model, sst_seq, miss_seq, artificial_mask, norm_mean, norm_std, device):
@@ -173,7 +176,7 @@ def main():
             gt = sst_seq[-1].copy()
             pred = predict_fno(model, sst_seq, miss_seq, mask,
                                norm_mean, norm_std, device)
-            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA)
+            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
 
             eval_mask = (mask * eligible).astype(bool)
             err = pred - gt

@@ -98,9 +98,13 @@ class Predictor:
         # 合成结果
         composed = self._compose_output(predicted, day30_sst, land_mask)
 
+        # 模型填充区(=第30天缺失且非陆地)——供后处理只平滑该区、保留观测真值
+        fill_mask = (np.isnan(day30_sst) & (land_mask == 0)).astype(np.uint8)
+
         return {
             'predicted_raw': predicted,
             'composed': composed,
             'day30_original': day30_sst,
-            'land_mask': land_mask
+            'land_mask': land_mask,
+            'fill_mask': fill_mask
         }

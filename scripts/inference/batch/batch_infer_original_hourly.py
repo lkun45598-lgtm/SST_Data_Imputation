@@ -46,8 +46,9 @@ EXP_ROOT = PROJECT_ROOT / 'experiments'
 GAUSSIAN_SIGMA = 1.0  # 与 postprocessing/gaussian_filter.py 一致
 
 # ── 高斯滤波（与 GitHub 版本一致）────────────────────────────────────────────
-def apply_gaussian_filter(sst_celsius, land_mask, sigma=GAUSSIAN_SIGMA):
-    """NaN填均值 → gaussian_filter → 恢复NaN（与postprocessing/gaussian_filter.py相同）"""
+def apply_gaussian_filter(sst_celsius, land_mask, sigma=GAUSSIAN_SIGMA, fill_region=None):
+    """NaN填均值 → gaussian_filter → 恢复NaN。
+    fill_region 给定时只在该区(云/填充区)写回滤波值，观测保留原值(真值不被滤波)。"""
     sst = sst_celsius.copy()
     mask_valid = ~np.isnan(sst) & (land_mask == 0)
     if mask_valid.sum() == 0:
@@ -55,7 +56,8 @@ def apply_gaussian_filter(sst_celsius, land_mask, sigma=GAUSSIAN_SIGMA):
     sst_tmp = sst.copy()
     sst_tmp[~mask_valid] = np.nanmean(sst)
     filtered = gaussian_filter(sst_tmp, sigma=sigma)
-    return np.where(mask_valid, filtered, np.nan)
+    write = mask_valid if fill_region is None else (mask_valid & (fill_region == 1))
+    return np.where(write, filtered, np.where(mask_valid, sst, np.nan))
 
 
 # ── Matplotlib 全局设置 ───────────────────────────────────────────────────────
@@ -293,8 +295,9 @@ def run_hour(hour: int, device: torch.device, series: int, n_samples: int):
 
             # output composition: 有观测区留原值，缺失区用模型
             composed_c = np.where(orig_missing > 0, pred_c, input_c)
-            # 高斯滤波后处理（与 postprocessing/gaussian_filter.py 一致）
-            composed_c = apply_gaussian_filter(composed_c, land_mask, sigma=GAUSSIAN_SIGMA)
+            # 高斯滤波后处理（仅平滑云/填充区，观测区保留真值不动）
+            composed_c = apply_gaussian_filter(composed_c, land_mask, sigma=GAUSSIAN_SIGMA,
+                                               fill_region=(orig_missing > 0))
 
             # 时间戳（取第30天对应时间）
             ts_idx = min(s_idx + 29, len(timestamps) - 1)

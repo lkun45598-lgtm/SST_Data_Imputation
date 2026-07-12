@@ -44,7 +44,7 @@ VIS_INTERVAL = 5  # 每隔多少帧可视化一次
 # Gaussian Filter Function
 # ============================================================================
 
-def apply_gaussian_filter(sst_data, land_mask, sigma=1.0):
+def apply_gaussian_filter(sst_data, land_mask, sigma=1.0, fill_region=None):
     """
     对SST数据应用高斯滤波
 
@@ -72,8 +72,13 @@ def apply_gaussian_filter(sst_data, land_mask, sigma=1.0):
     # 应用高斯滤波
     filtered = gaussian_filter(sst_for_filter, sigma=sigma)
 
-    # 只在有效海洋区域保留滤波结果
-    result = np.where(mask_valid, filtered, np.nan)
+    # 只在填充区(fill_region, 云区)写回滤波值；原始观测保留原值，陆地/无效保持NaN。
+    # fill_region=None 时退回旧行为(整个有效海洋区写回)。
+    if fill_region is None:
+        write = mask_valid
+    else:
+        write = mask_valid & (fill_region == 1)
+    result = np.where(write, filtered, np.where(mask_valid, sst, np.nan))
 
     return result
 
@@ -218,13 +223,14 @@ def process_nc_file(input_path: Path, output_path: Path, sigma: float):
         sst_filled = f_in.variables['sst_filled'][0, :, :]
         sst_knn = f_in.variables['sst_knn'][0, :, :]
         sst_filtered = f_in.variables['sst_filtered'][0, :, :]
-        missing_mask = f_in.variables['original_missing_mask'][0, :, :]
+        missing_mask = np.asarray(f_in.variables['original_missing_mask'][0, :, :])
 
         # 从filled数据推断land_mask
         land_mask = np.isnan(sst_knn).astype(np.uint8)
 
-    # 应用高斯滤波
-    sst_smoothed = apply_gaussian_filter(sst_filled, land_mask, sigma=sigma)
+    # 应用高斯滤波(仅平滑云/填充区，保留原始观测真值)
+    sst_smoothed = apply_gaussian_filter(sst_filled, land_mask, sigma=sigma,
+                                         fill_region=(missing_mask == 1))
 
     # 保存输出文件
     output_path.parent.mkdir(parents=True, exist_ok=True)

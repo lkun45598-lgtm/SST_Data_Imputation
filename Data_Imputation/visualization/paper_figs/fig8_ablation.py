@@ -14,20 +14,31 @@ sys.path.insert(0, str(Path(__file__).parent))
 from style import apply_paper_style, save_fig
 
 CACHE = Path(__file__).parent / "cache" / "fig8_stats.npz"
+BASELINE_CACHE = Path(__file__).parent / "cache" / "baseline_stats.npz"
 OUT_DIR = Path(__file__).parent / "output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Display labels and colors (left-to-right = simpler-to-richer)
-METHOD_ORDER = ["knn", "fno_only", "cbam_basic", "cbam_boundary", "cbam_full", "main"]
+# Methods ordered: traditional (gray-ish) → DL variants (warm/cool) → main
+METHOD_ORDER = [
+    "linear_2d", "cubic_2d", "dineof", "knn",   # traditional baselines
+    "fno_only", "cbam_basic", "cbam_boundary", "cbam_full",  # DL ablations
+    "main",                                                   # main model
+]
 METHOD_LABELS = {
-    "knn":           "KNN baseline",
+    "linear_2d":     "Linear\ninterp",
+    "cubic_2d":      "Cubic\ninterp",
+    "dineof":        "DINEOF",
+    "knn":           "KNN-IDW",
     "fno_only":      "FNO only",
     "cbam_basic":    "+ CBAM\n(+grad)",
-    "cbam_boundary": "+ boundary\nloss",
-    "cbam_full":     "+ temporal\nloss",
-    "main":          "main\n(100 ep)",
+    "cbam_boundary": "+ boundary",
+    "cbam_full":     "+ temporal",
+    "main":          "Main\n(ours)",
 }
 METHOD_COLORS = {
+    "linear_2d":     "#c8c8c8",
+    "cubic_2d":      "#a8a8a8",
+    "dineof":        "#888888",
     "knn":           "#9a9a9a",
     "fno_only":      "#d4956b",
     "cbam_basic":    "#e0b48a",
@@ -38,12 +49,31 @@ METHOD_COLORS = {
 
 
 def _bar_panel(ax, methods, values, errs, title, ylabel,
-               show_legend=False, annotate_value=True):
+               annotate_value=True, ymax=None):
+    """Plot bars; values above `ymax` are clipped and labelled 'off scale'."""
     xs = np.arange(len(methods))
     colors = [METHOD_COLORS.get(m, "#888") for m in methods]
-    bars = ax.bar(xs, values, yerr=errs, width=0.66,
+    values_arr = np.array(values, dtype=float)
+    errs_arr = np.array(errs, dtype=float)
+
+    # Soft cap so far-outlier bars don't dominate the y-axis
+    if ymax is None:
+        # Auto-cap at 1.4x the second-largest value
+        sorted_v = np.sort(values_arr[np.isfinite(values_arr)])
+        if len(sorted_v) >= 2:
+            ymax_auto = float(sorted_v[-2]) * 1.5
+            ymax = max(ymax_auto, 0.05)
+        else:
+            ymax = float(np.nanmax(values_arr) * 1.1)
+
+    plot_values = np.minimum(values_arr, ymax)
+    plot_errs = np.where(values_arr > ymax, 0, errs_arr)
+    over_cap = values_arr > ymax
+
+    bars = ax.bar(xs, plot_values, yerr=plot_errs, width=0.66,
                   color=colors, edgecolor="#333", linewidth=0.8,
                   capsize=4, error_kw=dict(ecolor="#444", lw=1.0))
+
     ax.set_xticks(xs)
     ax.set_xticklabels([METHOD_LABELS.get(m, m) for m in methods], fontsize=11)
     ax.set_ylabel(ylabel, fontsize=12)
@@ -52,13 +82,24 @@ def _bar_panel(ax, methods, values, errs, title, ylabel,
     ax.grid(axis="y", alpha=0.30, linestyle="--", linewidth=0.5)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.set_ylim(0, ymax * 1.18)
+
     if annotate_value:
-        for x, v in zip(xs, values):
+        for x, v, capped in zip(xs, values_arr, over_cap):
             if not np.isfinite(v):
                 continue
-            ax.text(x, v + (max(values) * 0.02), f"{v:.3f}",
-                    ha="center", va="bottom", fontsize=10, color="#333",
-                    fontweight="bold")
+            if capped:
+                # Show the real value with "off scale" arrow
+                ax.text(x, ymax * 1.02, f"{v:.3f}↑",
+                        ha="center", va="bottom", fontsize=10,
+                        color="#a83333", fontweight="bold")
+                ax.text(x, ymax * 0.97, "off",
+                        ha="center", va="top", fontsize=8,
+                        color="#a83333", style="italic")
+            else:
+                ax.text(x, v + ymax * 0.02, f"{v:.3f}",
+                        ha="center", va="bottom", fontsize=10,
+                        color="#333", fontweight="bold")
 
 
 def aggregate(records, metric, *, level=None, ratio_min=None, ratio_max=None):
@@ -83,10 +124,17 @@ def main():
     apply_paper_style()
     raw = np.load(CACHE, allow_pickle=True)
     records = list(raw["records"])
+    # Merge in traditional baselines from baseline_stats.npz
+    if BASELINE_CACHE.exists():
+        bl_raw = np.load(BASELINE_CACHE, allow_pickle=True)
+        records.extend(list(bl_raw["records"]))
+        print(f"Loaded {len(bl_raw['records'])} baseline records")
+    else:
+        print(f"WARN: {BASELINE_CACHE} missing — baselines not in figure")
 
     methods = [m for m in METHOD_ORDER
                if any(r["method"] == m for r in records)]
-    print(f"Methods found in cache: {methods}")
+    print(f"Methods to plot: {methods}")
 
     # ---- Aggregates ----
     agg_mae = aggregate(records, "mae")
@@ -94,11 +142,12 @@ def main():
     agg_bnd = aggregate(records, "bnd_mae")
     agg_high = aggregate(records, "mae", ratio_min=0.65)
 
-    fig = plt.figure(figsize=(15, 10))
+    # Wider figure to fit 9 bars per panel comfortably
+    fig = plt.figure(figsize=(18, 11))
     gs = fig.add_gridspec(
         2, 2,
-        hspace=0.36, wspace=0.20,
-        left=0.07, right=0.97, top=0.93, bottom=0.08,
+        hspace=0.38, wspace=0.20,
+        left=0.07, right=0.97, top=0.93, bottom=0.09,
     )
 
     ax = fig.add_subplot(gs[0, 0])
@@ -125,9 +174,9 @@ def main():
 
     n_per = agg_mae[methods[0]][2] if methods else 0
     fig.suptitle(
-        f"Ablation study — incremental contribution of CBAM, boundary, and "
-        f"temporal losses  (n={n_per} samples/method)",
-        fontsize=14, fontweight="bold", y=0.985,
+        f"Method comparison — traditional baselines, ablation variants, and "
+        f"main model  (n={n_per} samples/method)",
+        fontsize=15, fontweight="bold", y=0.985,
     )
 
     out = OUT_DIR / "fig8_ablation.png"

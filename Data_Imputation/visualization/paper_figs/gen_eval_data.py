@@ -29,6 +29,9 @@ sys.path.insert(0, str(DATA_IMPUTATION_DIR))
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
 
 # -- config --
+# Paper "Ours" = the deployed hour-00 model (experiments/jaxa_finetune). The full
+# system is a family of 24 per-hour fine-tuned models; hour 00 is the
+# representative shown in Fig. 4-6/8. See Section 3.4 (per-hour fine-tuning).
 KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
 MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
 CACHE_DIR = Path(__file__).parent / "cache"
@@ -139,7 +142,10 @@ def load_model(device):
     return model, mean, std
 
 
-def gauss_filter(sst, land_mask, sigma):
+def gauss_filter(sst, land_mask, sigma, fill_region=None):
+    """高斯滤波。fill_region 给定时只在该区(模型填充区)写回滤波值，
+    原始观测保留原值(真值不被滤波);None 时退回整场平滑(旧行为)。
+    """
     valid = ~np.isnan(sst) & (land_mask == 0)
     if valid.sum() == 0:
         return sst
@@ -147,7 +153,11 @@ def gauss_filter(sst, land_mask, sigma):
     fill = sst.copy()
     fill[~valid] = mean_v
     out = gaussian_filter(fill, sigma=sigma)
-    return np.where(valid, out, np.nan)
+    if fill_region is None:
+        write = valid
+    else:
+        write = valid & (fill_region == 1)
+    return np.where(write, out, np.where(valid, sst, np.nan))
 
 
 def predict_fno(model, sst_seq, miss_seq, artificial_mask, norm_mean, norm_std, device):

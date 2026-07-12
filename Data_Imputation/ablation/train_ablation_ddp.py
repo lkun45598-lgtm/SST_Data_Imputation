@@ -110,6 +110,7 @@ def combined_loss(pred, target, loss_mask, sst_seq, mask_seq,
 
 VARIANTS = {
     "fno_only":      dict(use_cbam=False, alpha_grad=0.0, alpha_temporal=0.0, alpha_boundary=0.0),
+    "fno_grad":      dict(use_cbam=False, alpha_grad=0.2, alpha_temporal=0.0, alpha_boundary=0.0),  # isolates grad-loss effect
     "cbam_basic":    dict(use_cbam=True,  alpha_grad=0.2, alpha_temporal=0.0, alpha_boundary=0.0),
     "cbam_boundary": dict(use_cbam=True,  alpha_grad=0.2, alpha_temporal=0.0, alpha_boundary=0.1),
     "cbam_full":     dict(use_cbam=True,  alpha_grad=0.2, alpha_temporal=0.1, alpha_boundary=0.1),

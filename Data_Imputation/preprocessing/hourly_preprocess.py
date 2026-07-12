@@ -192,8 +192,12 @@ def stage1_temporal_fill(series_id, hour_offset, num_workers):
 # Stage 2: 高斯低通滤波
 # ============================================================
 
-def gaussian_filter_frame(data, missing_mask, sigma=GAUSSIAN_SIGMA):
-    """对单帧做高斯滤波，缺失区域保持不变"""
+def gaussian_filter_frame(data, missing_mask, fill_mask, sigma=GAUSSIAN_SIGMA):
+    """对单帧做高斯滤波。
+
+    只对"时间填充像素"(fill_mask==1)写回滤波值；原始观测像素与缺失像素保持不变。
+    高斯卷积的输入仍使用真实观测值，使填充区能借真值邻居平滑，但结果不覆盖观测。
+    """
     valid_mask = ~np.isnan(data) & (missing_mask == 0)
     if valid_mask.sum() == 0:
         return data
@@ -203,17 +207,19 @@ def gaussian_filter_frame(data, missing_mask, sigma=GAUSSIAN_SIGMA):
     data_for_filter[~valid_mask] = mean_val
 
     filtered = ndimage.gaussian_filter(data_for_filter, sigma=sigma)
-    result = np.where(valid_mask, filtered, data)
+    # 只在填充像素处使用滤波值；观测/缺失保留原值(真值不被滤波)
+    write = valid_mask & (fill_mask == 1)
+    result = np.where(write, filtered, data)
     return result
 
 
-def stage2_filter(sst_data, missing_masks):
-    """Stage 2: 对所有帧做高斯低通滤波"""
-    print(f"\n  Stage 2: 高斯低通滤波 (sigma={GAUSSIAN_SIGMA})")
+def stage2_filter(sst_data, missing_masks, fill_masks):
+    """Stage 2: 对所有帧做高斯低通滤波(仅平滑时间填充像素，保留原始观测)"""
+    print(f"\n  Stage 2: 高斯低通滤波 (sigma={GAUSSIAN_SIGMA}, 仅填充区)")
 
     filtered_data = np.zeros_like(sst_data)
     for t in tqdm(range(len(sst_data)), desc="    滤波"):
-        filtered_data[t] = gaussian_filter_frame(sst_data[t], missing_masks[t])
+        filtered_data[t] = gaussian_filter_frame(sst_data[t], missing_masks[t], fill_masks[t])
 
     return filtered_data
 
@@ -349,8 +355,8 @@ def process_series(series_id, hour_offset, num_workers):
     # 计算陆地掩码
     land_mask = np.all(np.isnan(sst_data), axis=0).astype(np.uint8)
 
-    # Stage 2
-    filtered_data = stage2_filter(sst_data, missing_masks)
+    # Stage 2 (仅平滑时间填充像素，保留原始观测真值)
+    filtered_data = stage2_filter(sst_data, missing_masks, fill_masks)
 
     # Stage 3
     filled_data = stage3_knn_fill(filtered_data, missing_masks, land_mask, num_workers)
