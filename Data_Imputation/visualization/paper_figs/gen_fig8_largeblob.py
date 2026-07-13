@@ -45,7 +45,7 @@ ABLATION_VARIANTS = {
 
 WINDOW_SIZE = 30
 GPU_ID = 3
-SERIES_ID = 0
+SERIES_ID = 8   # held-out validation series (train=0..7, val=8); NOT a training series
 GAUSSIAN_SIGMA = 1.0
 SEED = 42
 NUM_SAMPLES_PER_LEVEL = 15

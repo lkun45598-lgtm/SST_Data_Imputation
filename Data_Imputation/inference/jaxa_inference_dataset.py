@@ -125,7 +125,8 @@ class JAXAFinetuneDataset(Dataset):
 
     def __init__(self, data_dir, series_ids=None, window_size=30,
                  mask_ratio=0.2, min_mask_size=10, max_mask_size=50,
-                 normalize=True, mean=None, std=None, cache_size=100, seed=42):
+                 normalize=True, mean=None, std=None, cache_size=100, seed=42,
+                 mask_mode='square', ratio_range=None):
         """
         Args:
             data_dir: KNN填充后的数据目录
@@ -199,13 +200,25 @@ class JAXAFinetuneDataset(Dataset):
             self.mean = mean
             self.std = std
 
-        # 方形挖空生成器
-        self.mask_generator = SquareMaskGenerator(
-            mask_ratio=mask_ratio,
-            min_size=min_mask_size,
-            max_size=max_mask_size,
-            seed=seed
-        )
+        # 挖空生成器: square(旧行为) 或 realcloud(真实云形状,只落观测区)
+        self.mask_mode = mask_mode
+        if mask_mode == 'realcloud':
+            try:
+                from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
+            except ImportError:
+                from real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
+            h5_paths = [s['h5_path'] for s in self.series_info]
+            bank = build_cloud_bank(h5_paths, max_donors=400, seed=seed)
+            self.mask_generator = RealCloudMaskGenerator(
+                bank, seed=seed, ratio_range=ratio_range)
+            print(f"  Mask mode: REAL-CLOUD (bank={len(bank)} donors, ratio_range={ratio_range})")
+        else:
+            self.mask_generator = SquareMaskGenerator(
+                mask_ratio=mask_ratio,
+                min_size=min_mask_size,
+                max_size=max_mask_size,
+                seed=seed
+            )
 
         # 缓存
         self._cache = {}

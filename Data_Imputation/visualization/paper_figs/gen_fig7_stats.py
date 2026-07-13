@@ -38,7 +38,7 @@ SEED = 42
 # All 24 hours now available (H=00 in base dir, H=01..23 in hourly_data/h{HH}/)
 EVAL_HOURS = list(range(0, 24))
 SAMPLES_PER_HOUR = 10
-SERIES_TO_USE = 0  # all hours have series_00 .. series_08; we use series_00 only
+SERIES_TO_USE = 8  # held-out validation series (train=0..7, val=8); NOT a training series
 
 # Diurnal cycle settings: scan 2024-07 (a full month with good coverage)
 DIURNAL_MONTH = "202407"
