@@ -37,8 +37,8 @@ ABLATION_VARIANTS = {
 MAIN_MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
 
 WINDOW_SIZE = 30
-GPU_ID = 3
-SERIES_ID = 0
+GPU_ID = 0                       # 3 号卡在重训, 改用空闲卡
+SERIES_ID = 8                    # held-out validation series (train=0..7); 不再在训练序列 0 上评估
 GAUSSIAN_SIGMA = 1.0
 SEED = 42
 

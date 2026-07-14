@@ -18,16 +18,17 @@ from scipy.ndimage import gaussian_filter
 DATA_IMPUTATION_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(DATA_IMPUTATION_DIR))
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
+from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
 
-# Paper "Ours" = deployed hour-00 model (experiments/jaxa_finetune).
-KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
-MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
+# Paper "Ours" = h12 real-cloud model (与 fig4/5/realgap 统一)
+KNN_FILLED_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"
+MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask/best_model.pth"
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 WINDOW_SIZE = 30
-GPU_ID = 3
-SERIES_ID = 0
+GPU_ID = 7                       # 0/5/6训基线, 1/2/3/4重训 -> 用 7
+SERIES_ID = 8   # held-out validation series (train=0..7, val=8); NOT a training series
 GAUSSIAN_SIGMA = 1.0
 SEED = 42
 
@@ -154,12 +155,14 @@ def main():
     gt_buffer = []
     sample_records = []
 
+    cloud_bank = build_cloud_bank([str(KNN_FILLED_DIR / f"jaxa_knn_filled_{i:02d}.h5") for i in [0, 3, 6]],
+                                  max_donors=400, seed=7)   # 真实云掩码 (取代方块)
     for name, level in MASK_LEVELS:
         print(f"\n== Level: {name} (ratio={level:.2f}) ==")
         idx_sample = rng.choice(candidates,
                                 size=min(NUM_SAMPLES_PER_LEVEL, len(candidates)),
                                 replace=False)
-        gen = SquareMaskGenerator(mask_ratio=level, seed=int(level * 1000))
+        gen = RealCloudMaskGenerator(cloud_bank, seed=int(level * 1000))
         for idx in tqdm(idx_sample, desc=f"  {name}"):
             sst_seq = np.zeros((WINDOW_SIZE, H, W), dtype=np.float32)
             miss_seq = np.zeros((WINDOW_SIZE, H, W), dtype=np.float32)
@@ -171,7 +174,7 @@ def main():
             eligible = obs_30 * ocean
             if eligible.sum() < 2000:
                 continue
-            mask = gen.generate(eligible.astype(np.float32))
+            mask = gen.generate(eligible.astype(np.float32), target_ratio=level)
             actual_ratio = float(mask.sum() / (eligible.sum() + 1e-8))
             gt = sst_seq[-1].copy()
             pred = predict_fno(model, sst_seq, miss_seq, mask,

@@ -411,6 +411,9 @@ def train_worker(rank, world_size, config):
     ostia_mean = 299.9221  # OSTIA训练时的mean (Kelvin)
     ostia_std = 2.6919     # OSTIA训练时的std (Kelvin)
 
+    mask_mode = config.get('mask_mode', 'square')
+    ratio_range = config.get('ratio_range', None)
+
     train_dataset = JAXAFinetuneDataset(
         data_dir=data_dir,
         series_ids=[0, 1, 2, 3, 4, 5, 6, 7],  # 8年训练数据
@@ -422,7 +425,9 @@ def train_worker(rank, world_size, config):
         mean=ostia_mean,   # 使用OSTIA归一化参数
         std=ostia_std,     # 使用OSTIA归一化参数
         cache_size=100,
-        seed=42
+        seed=42,
+        mask_mode=mask_mode,
+        ratio_range=ratio_range,
     )
 
     valid_dataset = JAXAFinetuneDataset(
@@ -436,7 +441,9 @@ def train_worker(rank, world_size, config):
         mean=ostia_mean,   # 使用OSTIA归一化参数
         std=ostia_std,     # 使用OSTIA归一化参数
         cache_size=50,
-        seed=123  # 不同seed确保验证集挖空不同
+        seed=123,  # 不同seed确保验证集挖空不同
+        mask_mode=mask_mode,
+        ratio_range=ratio_range,
     )
 
     train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=rank, shuffle=True)
@@ -567,21 +574,35 @@ def main():
     parser.add_argument('--hour', type=int, required=True, help='目标微调的小时 (1-23)')
     parser.add_argument('--epochs', type=int, default=50, help='微调轮数')
     parser.add_argument('--batch-size', type=int, default=2, help='每卡batch size')
+    parser.add_argument('--gpus', type=int, default=8, help='DDP GPU 数')
+    parser.add_argument('--mask-mode', choices=['square', 'realcloud'], default='square',
+                        help='人工挖空方式: square(旧) 或 realcloud(真实云形状,只落观测区)')
+    parser.add_argument('--ratio-lo', type=float, default=0.2,
+                        help='realcloud 挖空占"观测区"的比例下界')
+    parser.add_argument('--ratio-hi', type=float, default=0.3,
+                        help='realcloud 挖空占"观测区"的比例上界(观测区本就只~20-30%,不宜遮太多)')
+    parser.add_argument('--save-suffix', type=str, default=None,
+                        help='保存目录后缀(不指定时 realcloud 自动加 _realmask,避免覆盖现有模型)')
     args = parser.parse_args()
 
     # 配置
     hour_str = f"{args.hour:02d}"
+    suffix = args.save_suffix
+    if suffix is None:
+        suffix = '_realmask' if args.mask_mode == 'realcloud' else ''
     config = {
         'data_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h{hour_str}',
-        'save_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune_h{hour_str}',
+        'save_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune_h{hour_str}{suffix}',
         'pretrained_path': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain/best_model.pth',
         'batch_size': args.batch_size,  # per GPU
         'num_epochs': args.epochs,
         'lr': 5e-4,  # 微调学习率
-        'hour': args.hour
+        'hour': args.hour,
+        'mask_mode': args.mask_mode,
+        'ratio_range': (args.ratio_lo, args.ratio_hi),
     }
 
-    world_size = 4  # 4卡DDP
+    world_size = args.gpus  # DDP GPU 数 (8卡)
     mp.spawn(train_worker, args=(world_size, config), nprocs=world_size, join=True)
 
 

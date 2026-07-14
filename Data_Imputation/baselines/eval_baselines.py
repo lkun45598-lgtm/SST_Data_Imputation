@@ -35,7 +35,7 @@ from simple_interp import linear_interp_2d, cubic_interp_2d
 # ---- Settings matching gen_fig8_stats.py ----
 KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
 WINDOW_SIZE = 30
-SERIES_ID = 0
+SERIES_ID = 8   # held-out validation series (train=0..7, val=8); must match gen_fig6_stats.py
 GAUSSIAN_SIGMA = 1.0
 SEED = 42
 NUM_SAMPLES_PER_LEVEL = 15

@@ -60,7 +60,7 @@ def window(sst_all, miss_all, idx):
 def predict_frame(model, sst_all, miss_all, idx, mask, mean, std, land, device):
     sst_seq, miss_seq = window(sst_all, miss_all, idx)
     pred = G.predict_fno(model, sst_seq, miss_seq, mask, mean, std, device)
-    return G.gauss_filter(pred, land, G.GAUSSIAN_SIGMA)
+    return G.gauss_filter(pred, land, G.GAUSSIAN_SIGMA, fill_region=mask)
 
 
 def main():

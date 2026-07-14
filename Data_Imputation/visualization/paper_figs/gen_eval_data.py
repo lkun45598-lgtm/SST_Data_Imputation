@@ -27,19 +27,20 @@ DATA_IMPUTATION_DIR = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = DATA_IMPUTATION_DIR.parent
 sys.path.insert(0, str(DATA_IMPUTATION_DIR))
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
+from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
 
 # -- config --
 # Paper "Ours" = the deployed hour-00 model (experiments/jaxa_finetune). The full
 # system is a family of 24 per-hour fine-tuned models; hour 00 is the
 # representative shown in Fig. 4-6/8. See Section 3.4 (per-hour fine-tuning).
-KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
-MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
+KNN_FILLED_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"   # 与 realgap 图/部署一致 (h12)
+MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask/best_model.pth"  # 新 real-cloud 模型
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 WINDOW_SIZE = 30
-GPU_ID = 3
-SERIES_ID = 0
+GPU_ID = 7                       # 0/5/6 在训基线, 3/1/2/4 在重训 -> 用 7 (仅 cjm PINN, 有余量)
+SERIES_ID = 8                    # held-out validation series (train=0..7); 不再在训练序列 0 上评估
 NUM_SAMPLES_PER_LEVEL = 12   # per masking level
 GAUSSIAN_SIGMA = 1.0
 SEED = 42
@@ -219,6 +220,10 @@ def main():
     candidate_indices = np.array([i for i in range(start, T) if obs_all[i].sum() > 5000])
     print(f"candidate frames (>5000 obs pixels): {len(candidate_indices)}")
 
+    # real-cloud-shaped artificial masks (与训练/realgap 一致, 取代方块)
+    cloud_bank = build_cloud_bank([str(KNN_FILLED_DIR / f"jaxa_knn_filled_{i:02d}.h5") for i in [0, 3, 6]],
+                                  max_donors=400, seed=7)
+
     for name, level in MASK_LEVELS:
         print(f"\n== Level: {name} (mask_ratio={level:.2f}) ==")
         # sample frames
@@ -226,7 +231,7 @@ def main():
                                 size=min(NUM_SAMPLES_PER_LEVEL, len(candidate_indices)),
                                 replace=False)
         per_sample = []
-        gen = SquareMaskGenerator(mask_ratio=level, seed=int(level * 1000))
+        gen = RealCloudMaskGenerator(cloud_bank, seed=int(level * 1000))
 
         for idx in tqdm(idx_sample, desc=f"  {name}"):
             sst_seq = np.zeros((WINDOW_SIZE, *sst_all.shape[1:]), dtype=np.float32)
@@ -239,7 +244,7 @@ def main():
             eligible = obs_30 * ocean
             if eligible.sum() < 2000:
                 continue
-            mask = gen.generate(eligible.astype(np.float32))
+            mask = gen.generate(eligible.astype(np.float32), target_ratio=level)
 
             gt = sst_seq[-1].copy()
             # Save the original observation mask so fig4 can show the TRUE
@@ -249,12 +254,12 @@ def main():
             # FNO prediction
             fno = predict_fno(model, sst_seq, miss_seq, mask,
                               norm_mean, norm_std, device)
-            fno = gauss_filter(fno, land, GAUSSIAN_SIGMA)
+            fno = gauss_filter(fno, land, GAUSSIAN_SIGMA, fill_region=mask)
             # KNN baseline: input has NaN at masked positions, fill via 2D IDW
             knn_input = gt.copy()
             knn_input[mask > 0] = np.nan
             knn = knn_inpaint_2d(knn_input, mask, ocean, k=20, power=2.0)
-            knn = gauss_filter(knn, land, GAUSSIAN_SIGMA)
+            knn = gauss_filter(knn, land, GAUSSIAN_SIGMA, fill_region=mask)
 
             eval_mask = mask * eligible
             m_fno = metric_at_mask(fno, gt, eval_mask)
