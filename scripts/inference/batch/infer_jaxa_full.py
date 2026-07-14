@@ -4,21 +4,22 @@
 
 对每个小时的所有 series (00~08)，对每一帧做推理后保存 NC 文件。
 
-推理方式（方案A）：
-  - sst_seq  : 30天 KNN填充序列（原始值，不替换）
-  - mask_seq : 前29天用 original_missing_mask；第30天强制置0（与可视化脚本一致）
-  - output composition : 有观测区保留KNN值，云区用模型预测
-  - Gaussian 滤波 σ=1.0
+推理方式（方案B，与训练/fill_jaxa.py 一致）：
+  - 历史 29 帧 : KNN+时间填充后的代理场（信息增强，原样喂入）
+  - 第 30 天   : 只保留真实观测(original_obs_mask==1)，其余(非观测=时间填充+KNN+云)
+                 填 norm_mean（归一化后=0）；mask[-1] = 非观测海洋区(=待重建)
+  - output composition : 真实观测区保留观测值，所有非观测区用模型预测（重建全部原始缺失）
+  - Gaussian 滤波 σ=1.0（只平滑重建区，真实观测不动）
+
+  说明：这与训练完全一致——训练时 loss 只在“填成均值且 mask=1 的洞”上计算，
+  故模型唯一被验证过的重建通路就是“mask=1 + 均值填充 → 据历史重建”。旧“方案A”
+  （day30 喂满代理、mask 全 0、只写 KNN 区）处于未训练区间且只重建 29.9%，已废弃。
 
 输出目录结构：
   /data/sst_data/SST_Data_Imputation/YYYYMM/DD/YYYYMMDDHHMMSS.nc
 
-NC 文件变量：
-  lat, lon, time
-  sst_original      : 原始滤波后JAXA SST（云区为NaN）
-  sst_knn_filled    : KNN粗糙填充SST（完整）
-  sst_model_filled  : FNO-CBAM重建（output composition + Gaussian σ=1.0）
-  original_missing_mask : 云层掩码（1=云/缺失，0=有观测）
+NC 文件变量（与 h=00 格式一致）：
+  lat, lon, time, sea_surface_temperature  （仅保存模型填充+滤波后的海温）
 
 用法：
   python infer_jaxa_full.py [--hours 1-23] [--gpu 6] [--batch_size 4]
@@ -123,9 +124,9 @@ def save_nc_file(output_path: Path, lat, lon, timestamp_str, sst_model):
         ds.history     = f'Created {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
 
 
-def load_model(hour: int, device):
+def load_model(hour: int, device, suffix: str = ''):
     hh = f'{hour:02d}'
-    model_path = EXP_ROOT / f'jaxa_finetune_h{hh}' / 'best_model.pth'
+    model_path = EXP_ROOT / f'jaxa_finetune_h{hh}{suffix}' / 'best_model.pth'
     model = FNO_CBAM_SST_Temporal(
         out_size=(451, 351), modes1=80, modes2=64, width=64, depth=6,
         cbam_reduction_ratio=16
@@ -139,18 +140,18 @@ def load_model(hour: int, device):
 
 
 # ── 单小时推理 ────────────────────────────────────────────────────────────────
-def run_hour(hour: int, device, batch_size: int):
+def run_hour(hour: int, device, batch_size: int, suffix: str = ''):
     hh = f'{hour:02d}'
     print(f'\n{"="*60}')
     print(f'H={hh}  开始推理')
     print(f'{"="*60}')
 
-    model_path = EXP_ROOT / f'jaxa_finetune_h{hh}' / 'best_model.pth'
+    model_path = EXP_ROOT / f'jaxa_finetune_h{hh}{suffix}' / 'best_model.pth'
     if not model_path.exists():
         print(f'  模型不存在，跳过: {model_path}')
         return
 
-    model, norm_mean, norm_std = load_model(hour, device)
+    model, norm_mean, norm_std = load_model(hour, device, suffix)
     print(f'  模型加载完成 | norm_mean={norm_mean:.4f}K  norm_std={norm_std:.4f}K')
 
     total_saved = total_skipped = total_failed = 0
@@ -213,9 +214,15 @@ def run_hour(hour: int, device, batch_size: int):
                     win_sst  = np.concatenate([np.tile(win_sst[:1],  (pad, 1, 1)), win_sst],  axis=0)
                     win_miss = np.concatenate([np.tile(win_miss[:1], (pad, 1, 1)), win_miss], axis=0)
 
-                # 方案A：第30天的mask置0（与可视化推理保持一致）
+                # 方案B（与训练/fill_jaxa.py 一致）：第30天只留真实观测，其余填均值
+                # (归一化空间=0)，mask[-1]=非观测海洋区(待重建)。win_sst 可能是切片视图，
+                # 必须先 copy 再改，否则会污染 sst_norm_all。
+                obs_t    = obs_all[t]
+                nonobs_t = ((obs_t == 0) & (land == 0)).astype(np.float32)
+                win_sst  = win_sst.copy()
                 win_miss = win_miss.copy()
-                win_miss[-1] = 0.0
+                win_sst[-1]  = np.where(obs_t == 1, win_sst[-1], 0.0)
+                win_miss[-1] = nonobs_t
 
                 sst_batch[bi]  = win_sst
                 mask_batch[bi] = win_miss
@@ -234,17 +241,13 @@ def run_hour(hour: int, device, batch_size: int):
                     pred_k = pred_np[bi] * norm_std + norm_mean   # (H, W)
                     knn_k  = sst_all[t]                            # (H, W) KNN填充，含NaN(陆地)
 
-                    # 原始SST：观测区保留，云区为NaN
-                    orig_miss = miss_all[t]   # 1=云/缺失
-                    sst_orig  = np.where(orig_miss == 0, knn_k, np.nan)
-
-                    # Output composition：有观测区用KNN，云区用模型
-                    sst_model = np.where(orig_miss == 1, pred_k, knn_k)
+                    # Output composition（方案B）：真实观测区保留观测值(knn_k 在观测处即真值),
+                    # 所有非观测区(时间填充+KNN+云)用模型预测 -> 重建全部原始缺失
+                    not_obs   = (obs_all[t] == 0) & (land == 0)
+                    sst_model = np.where(not_obs, pred_k, knn_k)
                     sst_model = np.where(land == 1, np.nan, sst_model)  # 陆地置NaN
 
-                    # 高斯滤波:平滑所有"重建"像素(云区 + 时间回填,都是合成的),
-                    # 只保留当前时刻的真实观测(original_obs_mask)不动 -> 重建区连续无接缝
-                    not_obs = (obs_all[t] == 0)
+                    # 高斯滤波:只平滑重建区(非观测),真实观测原样保留 -> 连续无接缝
                     sst_model = apply_gaussian(sst_model, land, fill_region=not_obs)
 
                     # 保存NC（仅保存模型填充+滤波后的海温）
@@ -277,7 +280,10 @@ def main():
     parser.add_argument('--hours', default='1-23')
     parser.add_argument('--gpu', type=int, default=6)
     parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--realmask', action='store_true',
+                        help='使用真实云形状重训的模型 jaxa_finetune_h{HH}_realmask（推荐，与验证口径一致）')
     args = parser.parse_args()
+    suffix = '_realmask' if args.realmask else ''
 
     if '-' in args.hours:
         lo, hi = args.hours.split('-')
@@ -297,7 +303,7 @@ def main():
     t0 = datetime.now()
     total = 0
     for h in hours:
-        n = run_hour(h, device, args.batch_size)
+        n = run_hour(h, device, args.batch_size, suffix)
         if n:
             total += n
 

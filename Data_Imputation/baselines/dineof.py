@@ -48,9 +48,10 @@ def dineof_fill(data, valid, *, k=5, max_iter=30, tol=1e-4, verbose=False,
     # Column-wise temporal mean over OBSERVED entries
     col_sum = np.where(V, X, 0).sum(axis=0)        # (P,)
     col_cnt = V.sum(axis=0)                        # (P,)
+    global_mean = float(X[V].mean()) if V.any() else 0.0   # observed grand mean
     col_mean = np.where(col_cnt > 0,
                         col_sum / np.maximum(col_cnt, 1),
-                        0.0)                       # (P,)
+                        global_mean)               # (P,) never-obs -> grand mean, not 0K
 
     # Init: keep observed values; fill missing with column mean
     X_filled = np.where(V, X, np.broadcast_to(col_mean, X.shape))

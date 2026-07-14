@@ -178,6 +178,24 @@ FNO_CBAM_SST_Temporal(
 
 > 参数量以当前配置 `(451,351)/modes 80×64/width 64/depth 6` 估算。SpectralConv 频域权重和作用于全分辨率的 LayerNorm 是两大主要贡献项。
 
+### 计算成本（实测）
+
+在单张 24 GB GPU 上，以 batch=1、30 帧输入 `(1,30,451,351)` 实测（脚本 `scripts/measure_cost.py`）：
+
+| 指标 | 值 |
+|------|-----|
+| 总参数量 | **624,930,701（≈624.9 M）**，全部可训练 |
+| 模型权重大小 (fp32) | ~2.33 GB |
+| 推理峰值显存 (batch=1) | **~2.78 GB** |
+| 推理速度 (batch=1) | **~246 ms/帧（≈4.1 帧/s）** |
+| 全量产品 73,004 帧、单卡推理 | **~5.0 h** |
+| 前向 FLOPs (batch=1, thop) | ~11.7 GFLOPs（见下注） |
+| 训练耗时 | OSTIA 预训练 ~8 h；每小时 JAXA 微调 ~4 h（4×GPU，见 `docs/training.md`） |
+
+> **规模定位（如实）**：本模型约 6.25 亿参数、以 SpectralConv 频域权重（81%）与固定网格 LayerNorm（19%）为主，属于**大参数量**模型，**不应描述为 "lightweight"**；LayerNorm 权重形状 `[64,451,351]` 与网格绑定，模型**不是 resolution-invariant**（更换网格尺寸需重新适配）。
+>
+> **FLOPs 注意**：thop 的 11.7 GFLOPs 未必统计到 SpectralConv 内部的 FFT/IFFT 与复数张量收缩，应视为**下界/近似**；参数量、显存与推理耗时为直接实测，可信。
+
 ---
 
 ## 输入输出规格
