@@ -18,3 +18,6 @@ __pycache__/
 AGENTS.md
 .planning/
 METHODOLOGY_backup.md
+
+# Local isolated feature worktrees
+.worktrees/

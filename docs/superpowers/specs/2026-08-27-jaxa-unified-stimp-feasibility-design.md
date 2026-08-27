@@ -1,226 +1,198 @@
-# JAXA Unified 72-Hour Diffusion Feasibility Design
+# JAXA 统一 72 小时时空扩散模型可行性测试设计
 
-## Status
+## 状态
 
-Draft for user review. This document defines a memory and execution feasibility
-prototype only. It does not authorize full training or replacement of the
-existing FNO-CBAM experiments.
+本文档已经用户确认，可以进入显存和运行可行性原型的实现与测试。该确认
+不代表批准正式训练，也不替换现有 FNO-CBAM 实验。
 
-## Goal
+## 目标
 
-Determine whether one mask-conditioned diffusion model can jointly reconstruct
-72 consecutive hourly JAXA SST fields at the native `451 x 351` grid on one
-24 GB RTX 4090 per DDP rank. The prototype must run one real-data forward pass,
-one backward pass, and one short reverse-diffusion sample while reporting peak
-CUDA memory and tensor shapes.
+验证一个带掩码条件的扩散模型，能否在每个 DDP 进程使用一张 24 GB
+RTX 4090 的条件下，以原始 `451 x 351` 网格联合重建连续 72 小时的
+JAXA SST。原型必须使用真实数据完成一次前向传播、一次反向传播和一次
+短步数反向扩散采样，并记录 CUDA 峰值显存和各阶段张量形状。
 
-If the per-rank workload fits on one 4090, the same model will later be eligible
-for eight-GPU DistributedDataParallel (DDP) training. DDP is treated as a
-throughput mechanism; the design does not assume that eight cards combine into
-one 192 GB memory pool.
+如果单进程任务可以放入一张 4090，同一个模型后续才具备使用 8 卡
+DistributedDataParallel（DDP）训练的条件。DDP 仅用于提高吞吐量，设计
+不假设 8 张显卡能够合并成一块 192 GB 显存。
 
-## Non-Goals
+## 不在本次范围内的内容
 
-- Do not start a full training run.
-- Do not use OSTIA pre-training in this prototype.
-- Do not use Gaussian, temporal interpolation, or KNN proxy fields as model
-  inputs or targets.
-- Do not modify the current FNO-CBAM, proxy-generation, checkpoint, paper-cache,
-  or visualization code.
-- Do not claim reconstruction accuracy from a memory smoke test.
-- Do not copy STIMP's dense spatial graph, hard-coded data paths, chlorophyll
-  log transform, or eight-day data assumptions.
+- 不启动完整训练。
+- 本次原型不使用 OSTIA 预训练。
+- 不把 Gaussian、时间插值或 KNN 代理场用作模型输入或目标。
+- 不修改当前 FNO-CBAM、代理场生成、checkpoint、论文缓存或可视化代码。
+- 不根据显存测试宣称模型具有重建精度。
+- 不照搬 STIMP 的稠密空间图、硬编码数据路径、叶绿素对数变换或八日数据
+  假设。
 
-## Data Contract
+## 数据约定
 
-The source is the original hourly JAXA NetCDF archive at
-`/data/sst_data/sst_missing_value_imputation/jaxa_data/jaxa_extract_L3`.
-Each available file contains one Kelvin SST field on a `451 x 351` grid. The
-filename timestamp is the authoritative timestamp used to build the timeline.
+数据源为原始逐小时 JAXA NetCDF 目录：
+`/data/sst_data/sst_missing_value_imputation/jaxa_data/jaxa_extract_L3`。
+每个有效文件包含一张单位为 Kelvin、大小为 `451 x 351` 的 SST 场。
+文件名中的时间戳是构造时间轴的唯一依据。
 
-One sample contains exactly 72 hourly slots from `t-71h` through `t`, inclusive.
-Slots are never compressed to the next available observation. If a source file
-is absent, its slot contains a zero normalized-value placeholder and an all-zero
-observation mask. Missing pixels in an available frame use the same placeholder
-and a zero mask. The NetCDF files do not contain a separate land variable, so
-the prototype requires an explicit H5 `land_mask` path from the existing JAXA
-products. It reads only that static mask from the H5 file and never reads its SST
-values. The mask shape must be `451 x 351`, and land is excluded from all losses.
+每个样本固定包含从 `t-71h` 到 `t` 的 72 个整小时时隙。不能因为某个
+时刻没有文件而压缩时间轴或改用下一张有效观测。若某个源文件不存在，
+对应时隙的归一化 SST 使用零占位，观测掩码全部为零。有效文件中的缺失
+像素也使用相同的数值占位，并由零值观测掩码明确标识。
 
-The smoke test normalizes SST using the mean and standard deviation of observed
-ocean pixels in its selected 72-slot segment. A full experiment must instead
-precompute one fixed normalization from raw observed-ocean pixels in training
-Series 0--6 and reuse it unchanged for validation, test, and inference.
+原始 NetCDF 没有单独提供陆地变量，因此原型要求显式传入一个现有 JAXA
+H5 文件中的 `land_mask`。程序只读取该 H5 的静态陆地掩码，绝不读取其中
+的 SST。陆地掩码必须为 `451 x 351`，所有损失均排除陆地。
 
-The eventual data split remains the approved annual-series split:
+显存测试使用所选 72 小时片段中真实观测海洋像素的均值和标准差进行
+归一化。正式实验必须重新从训练 Series 0--6 的原始真实观测海洋像素
+计算一组固定归一化参数，并原样用于验证、测试和推理。
 
-- training: Series 0--6;
-- validation: Series 7;
-- test: Series 8.
+后续正式实验继续使用已经确认的年度序列划分：
 
-No sample may cross a series boundary. The feasibility smoke test reads one
-72-slot segment from a training series and does not write a derived dataset.
+- 训练：Series 0--6；
+- 验证：Series 7；
+- 测试：Series 8。
 
-## Training Mask Semantics
+任何样本都不能跨越年度序列边界。可行性测试只读取训练序列中的一个
+72 小时片段，不生成新的派生数据集。
 
-Let `O` denote naturally observed ocean pixels and `A` denote artificially
-withheld pixels sampled only from `O`. The conditioning mask is `C = O & ~A`.
-Artificial masks are drawn from real JAXA cloud shapes from training-series
-timestamps and intersected with `O`; independent random pixels are not the
-scientific training protocol.
+## 训练掩码语义
 
-The clean SST target is known only on `O`. The supervised diffusion loss is
-therefore evaluated only on `A`. Naturally missing ocean pixels never receive a
-fabricated pixel target. During reverse diffusion, all pixels in `C` are clamped
-back to their real JAXA observations after every denoising step. Land remains
-excluded. This is the JAXA adaptation of STIMP's masked-observation training
-principle.
+记 `O` 为原本真实可见的海洋像素，`A` 为仅从 `O` 中选出的人工遮挡像素，
+则模型条件掩码为 `C = O & ~A`。正式训练中的人工掩码来自训练序列内真实
+JAXA 云形状，并与 `O` 取交集；独立随机像素遮挡不作为正式科研协议。
 
-For the memory smoke test, a deterministic small artificial mask may be used to
-guarantee a non-empty loss, but the prototype interface must accept the final
-real-cloud-shaped mask contract.
+真实 SST 目标只在 `O` 上已知，因此扩散模型的监督损失只在 `A` 上计算。
+自然云缺失海洋像素没有人为构造的像素真值。反向扩散的每一个去噪步骤
+之后，都将 `C` 中的像素重新固定为真实 JAXA 观测；陆地始终排除。这是将
+STIMP 的观测掩码训练原则适配到 JAXA 后的定义。
 
-## Prototype Architecture
+为了保证显存测试一定产生非空损失，smoke test 可以使用一个确定性的小型
+人工掩码，但原型接口必须兼容最终的真实云形状掩码约定。
 
-### Shared Spatial Encoder
+## 原型架构
 
-Each hourly pair `[normalized SST, observation mask]` is passed through the same
-2D convolutional encoder. The encoder downsamples spatial dimensions by a factor
-of eight before any temporal attention. The implementation processes fixed-size
-time chunks through this shared encoder to bound peak activation memory without
-changing frame values or temporal order.
+### 共享空间编码器
 
-### Time and Diffusion Conditioning
+每个小时的 `[归一化 SST, 观测掩码]` 经过同一套二维卷积编码器。在进入
+任何时间注意力之前，编码器将空间尺寸下采样 8 倍。实现按固定时间块调用
+共享编码器，以限制峰值激活显存，同时保持每帧数值和时间顺序不变。
 
-The latent representation receives:
+### 时间条件和扩散条件
 
-- diffusion-step embedding;
-- hour-of-day sine and cosine encoding;
-- day-of-year sine and cosine encoding;
-- slot-validity information derived from the observation mask.
+潜空间特征接收以下条件：
 
-Actual slots remain one hour apart by construction. Calendar encodings expose
-diurnal and seasonal phase without treating a missing file as elapsed zero time.
+- 扩散步编码；
+- 小时的正弦和余弦编码；
+- 年内日期的正弦和余弦编码；
+- 从观测掩码得到的时隙有效性信息。
 
-### Spatiotemporal Denoiser
+所有时隙在时间轴上仍严格间隔一小时。即使源文件缺失，该时隙也不会被
+视为零时间间隔。日变化和季节相位通过日历编码显式提供给模型。
 
-The denoiser alternates residual spatial convolutions with temporal self-attention
-over the 72 latent states at each downsampled spatial location. It uses PyTorch
-scaled-dot-product attention so a memory-efficient CUDA kernel can be selected.
-No dense `N x N` spatial adjacency matrix is constructed.
+### 时空去噪器
 
-For training, the shared encoder creates a clean latent state from the original
-observations `O` and a conditioning latent state from the withheld observations
-`C`. The clean-state placeholder remains zero at naturally missing pixels, but
-those pixels are never supervised. Gaussian diffusion noise is applied to the
-clean latent state at one randomly selected diffusion step. The denoiser receives
-the noisy latent, conditioning latent, conditioning mask, calendar encodings,
-and diffusion-step embedding.
+去噪器交替使用残差空间卷积，以及在每个降采样空间位置上沿 72 个时间
+状态计算的时间自注意力。注意力使用 PyTorch 的
+scaled-dot-product attention，以便 CUDA 选择内存高效实现。模型不构造
+任何稠密 `N x N` 空间邻接矩阵。
 
-The prototype predicts the clean latent state, matching STIMP's original-data
-prediction formulation rather than predicting diffusion noise. Its prediction
-is decoded to native-grid SST, and the training MSE is evaluated in pixel space
-only on `A`. The spatial decoder is shared across time and reconstructs all 72
-full-resolution fields. It processes fixed-size time chunks because temporal
-interaction has already occurred in latent space.
+训练时，共享编码器分别从原始观测 `O` 构造干净潜状态，从条件观测 `C`
+构造条件潜状态。干净状态在自然缺失位置仍使用零占位，但这些位置永远不
+参与监督。程序在一个随机选择的扩散步上向干净潜状态加入高斯噪声。去噪器
+输入包括带噪潜状态、条件潜状态、条件掩码、日历编码和扩散步编码。
 
-### Output Composition
+原型预测干净潜状态，与 STIMP 预测原始数据而不是预测噪声的形式一致。
+预测潜状态解码到原始网格后，只在 `A` 上计算像素空间 MSE。空间解码器在
+72 个时刻共享参数并输出全部 72 张全分辨率结果。由于时间信息已经在
+潜空间交互完成，解码器按固定时间块执行以降低峰值显存。
 
-The raw model output has shape `[B, 72, 1, 451, 351]`. Its final composed output
-uses original JAXA values wherever the conditioning mask is one and model values
-elsewhere. Composition is applied to every reconstructed hour, not only the last
-frame.
+### 输出组合
 
-## Feasibility Configuration
+模型原始输出形状为 `[B, 72, 1, 451, 351]`。最终组合结果在条件掩码为一
+的位置使用原始 JAXA 观测，其余位置使用模型输出。全部 72 个时刻都执行
+该组合，不只处理最后一帧。
 
-The first CUDA test uses these fixed conservative settings:
+## 可行性测试配置
 
-- per-rank batch size: 1;
-- latent width: 32;
-- spatial downsampling: 8;
-- temporal-attention blocks: 1;
-- attention heads: 4;
-- diffusion training step: one randomly sampled step;
-- reverse-sampling smoke steps: 4;
-- precision: BF16 autocast when supported, otherwise FP16 autocast;
-- gradient checkpointing: enabled for the spatiotemporal block.
+首次 CUDA 测试固定使用以下保守配置：
 
-The smoke configuration is deliberately smaller than a final scientific model.
-It validates the data path and memory strategy, not final capacity. Model width,
-block count, and diffusion steps remain unchanged during this smoke test.
+- 单卡 batch size：1；
+- 潜空间通道数：32；
+- 空间下采样倍数：8；
+- 时间注意力模块数：1；
+- 注意力头数：4；
+- 每次扩散训练只随机采样一个噪声步；
+- 反向扩散 smoke test：4 步；
+- 精度：硬件支持时使用 BF16 autocast，否则使用 FP16 autocast；
+- 对时空模块启用梯度检查点。
 
-## Distributed Execution
+该配置小于最终科研模型，仅用于验证数据通路和显存策略，不表示最终模型
+容量。本次 smoke test 期间不改变通道数、模块数量或扩散步数。
 
-The new experiment will use `torchrun` and the repository's established NCCL
-DDP pattern. Each rank owns one complete model and one real 72-hour sample. With
-eight ranks and per-rank batch size one, the global batch size is eight. Only
-rank zero writes reports or checkpoints.
+## 分布式执行
 
-The feasibility sequence is:
+新实验沿用仓库现有的 NCCL DDP 模式并通过 `torchrun` 启动。每个进程持有
+一份完整模型和一个真实 72 小时样本。8 个进程、每进程 batch size 为 1
+时，全局 batch size 为 8。只有 rank 0 可以写报告或 checkpoint。
 
-1. CPU shape and mask-contract test.
-2. One-GPU forward-only test.
-3. One-GPU forward/backward test with peak-memory reporting.
-4. One-GPU four-step reverse-diffusion sampling test.
-5. Two-GPU DDP one-step synchronization test.
-6. Eight-GPU DDP one-step test only if all eight GPUs are available and the
-   one-GPU test leaves an adequate memory margin.
+测试按以下顺序执行：
 
-No background `tmux` session is required for these bounded smoke tests.
+1. CPU 张量形状和掩码语义测试。
+2. 单卡纯前向测试。
+3. 单卡前向和反向测试，并记录峰值显存。
+4. 单卡 4 步反向扩散采样测试。
+5. 两卡 DDP 单步参数同步测试。
+6. 仅当 8 张卡都可用且单卡具有足够显存余量时，执行 8 卡 DDP 单步测试。
 
-## Failure Handling
+这些测试均为有界 smoke test，不需要建立后台 `tmux` 会话。
 
-CUDA out-of-memory is handled by recording the failing stage and configuration,
-clearing the process, and reducing memory in this order:
+## 失败处理
 
-1. reduce encoder/decoder time-chunk size;
-2. enable or broaden activation checkpointing;
-3. reduce latent width from 32 to 24;
-4. increase spatial downsampling from 8 to 16.
+若发生 CUDA 显存不足，程序记录失败阶段和完整配置，结束当前进程，然后
+严格按以下顺序降低显存：
 
-The 72-slot temporal window and native output resolution are not silently
-reduced. Any such scope change requires explicit user approval.
+1. 减小编码器和解码器的时间分块大小；
+2. 扩大梯度检查点覆盖范围；
+3. 将潜空间通道数从 32 降至 24；
+4. 将空间下采样倍数从 8 提高到 16。
 
-Missing source files are valid all-missing time slots. A corrupt or wrong-shaped
-NetCDF file is a data error and must fail with its exact path and timestamp.
-Samples with no artificially withheld observed ocean pixels are rejected and
-resampled; their loss is never replaced with zero.
+程序不能静默缩短 72 小时时间窗口，也不能降低最终输出分辨率。这两类
+范围变化必须重新获得用户明确批准。
 
-## Validation Gates
+源文件缺失是合法的全缺失时隙。NetCDF 损坏或空间形状错误属于数据错误，
+程序必须报告确切路径和时间戳并失败。没有任何人工遮挡观测像素的样本必须
+被拒绝并重新采样，不能把它的损失替换为零。
 
-The prototype passes only if all of the following hold:
+## 验证门槛
 
-1. Input, latent, raw-output, and composed-output shapes match the documented
-   contract.
-2. The composed output exactly preserves every conditioned JAXA observation.
-3. Loss support equals the artificial-mask ocean support and excludes natural
-   gaps and land.
-4. One forward/backward optimizer step produces finite loss and finite gradients.
-5. Four reverse steps produce finite SST values on all ocean pixels.
-6. Peak allocated and reserved CUDA memory are recorded; the backward test must
-   fit below 22 GB on a 24 GB 4090 to retain operating margin.
-7. The two-rank DDP smoke test completes with finite, synchronized parameters.
+只有同时满足以下条件，原型才算通过：
 
-The eight-rank test is an execution check, not a substitute for the per-rank
-22 GB gate.
+1. 输入、潜状态、原始输出和组合输出形状均符合本文档约定。
+2. 组合输出逐像素精确保留全部条件 JAXA 观测。
+3. 损失支持域与人工遮挡海洋像素一致，并排除自然缺失和陆地。
+4. 一次前向、反向和优化器更新得到有限损失及有限梯度。
+5. 4 步反向扩散后，所有海洋输出均为有限 SST 数值。
+6. 记录 CUDA 峰值 allocated 和 reserved 显存；在 24 GB 4090 上，反向测试
+   必须低于 22 GB，以保留运行余量。
+7. 两卡 DDP smoke test 完成，并得到有限且同步的模型参数。
 
-## Isolation and Artifacts
+8 卡测试只验证执行流程，不能替代单卡 22 GB 门槛。
 
-All implementation files will live under a new directory:
-`Data_Imputation/retraining/stimp_jaxa_unified/`.
+## 代码隔离和输出
 
-All smoke-test artifacts will be written beneath a new caller-specified output
-directory that refuses to reuse a non-empty path. The report will contain the
-resolved configuration, source timestamps, missing-slot count, artificial-mask
-support, parameter count, precision, stage runtimes, and CUDA peak-memory values.
-No existing checkpoint or cache may be overwritten.
+所有新增实现均放在独立目录：
+`Data_Imputation/retraining/stimp_jaxa_unified/`。
 
-## Decision After the Smoke Test
+所有 smoke test 产物写入调用者指定的新输出目录；若目录非空，程序必须
+拒绝使用。报告内容包括：解析后的配置、源时间戳、缺失时隙数量、人工掩码
+支持像素数、参数量、数值精度、各阶段耗时和 CUDA 峰值显存。任何现有
+checkpoint 或缓存都不得覆盖。
 
-Passing this design establishes only that native-grid, 72-hour joint diffusion
-is computationally feasible. Before full training, a separate approved design
-must define final model capacity, diffusion schedule, cloud-mask sampling,
-validation metrics, sampling ensemble size, and comparison against the current
-FNO-CBAM model. If the prototype cannot meet the 22 GB gate after the documented
-memory reductions, the next design will evaluate target-frame-only decoding or
-a separately trained autoencoder for latent diffusion.
+## Smoke Test 之后的决策
+
+通过本设计只能证明原始网格下 72 小时联合扩散在计算上可行，不能证明
+方法精度。在正式训练前，需要另行确认最终模型容量、扩散时间表、云掩码
+采样、验证指标、采样集成数量，以及与现有 FNO-CBAM 的比较协议。
+
+如果按本文规定的显存调整顺序执行后仍不能满足 22 GB 门槛，下一版设计
+再评估只解码目标时刻，或先单独训练自动编码器后进行标准潜空间扩散。
