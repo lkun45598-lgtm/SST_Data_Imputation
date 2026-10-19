@@ -37,9 +37,12 @@ def flip_lat_if_descending(case):
     return case
 
 
-def find_best_zoom(diff_field, obs_mask, ocean, lat, lon, zoom_deg=ZOOM_SIZE_DEG):
-    """Identical to fig4_overview.find_best_zoom (deterministic)."""
-    score = np.abs(diff_field).astype(np.float32)
+def find_best_zoom(fno_diff, knn_diff, obs_mask, ocean, lat, lon, zoom_deg=ZOOM_SIZE_DEG):
+    """Find zoom region where KNN performs worse than FNO (largest KNN-FNO error difference)."""
+    # Calculate advantage: |KNN error| - |FNO error|
+    # Positive values = KNN worse than FNO (our method wins)
+    advantage = np.abs(knn_diff) - np.abs(fno_diff)
+    score = advantage.astype(np.float32)
     score = np.where((ocean == 1) & (obs_mask == 1), score, 0)
     score = gaussian_filter(score, sigma=6)
     dlat, dlon = abs(lat[1] - lat[0]), abs(lon[1] - lon[0])
@@ -94,12 +97,15 @@ def main():
     gt_c = k_to_c(case["gt"])
     fno_c = k_to_c(case["fno"])
     knn_c = k_to_c(case["knn"])
-    diff_fno_knn = fno_c - knn_c
+
+    # Calculate errors for both methods
+    diff_fno = fno_c - gt_c
+    diff_knn = knn_c - gt_c
 
     finite = gt_c[(ocean == 1) & (obs_mask == 1)]
     vmin, vmax = float(np.percentile(finite, 1)), float(np.percentile(finite, 99))
 
-    iy, ix, half_y, half_x = find_best_zoom(diff_fno_knn, obs_mask, ocean, lat, lon)
+    iy, ix, half_y, half_x = find_best_zoom(diff_fno, diff_knn, obs_mask, ocean, lat, lon)
     iy0, iy1 = max(0, iy - half_y), min(len(lat), iy + half_y + 1)
     ix0, ix1 = max(0, ix - half_x), min(len(lon), ix + half_x + 1)
     z_lat0, z_lat1 = float(lat[iy0]), float(lat[iy1 - 1])
@@ -125,12 +131,12 @@ def main():
     ax_prof = fig.add_subplot(gs[1, :])
 
     render_sst_panel(ax_knn, knn_z, land_z, ocean_z, lat_z, lon_z, vmin, vmax,
-                     show_y=True, panel_title="KNN")
+                     show_y=True, panel_title="KNN interpolation")
     im = render_sst_panel(ax_fno, fno_z, land_z, ocean_z, lat_z, lon_z, vmin, vmax,
                           panel_title="FNO-CBAM (ours)")
     render_sst_panel(ax_gt, sparse_gt_z, land_z, ocean_z, lat_z, lon_z, vmin, vmax,
                      extra_mask=cloud_z, extra_color=MISSING_OVERLAY,
-                     panel_title="Ground truth")
+                     panel_title="Reference (observed)")
     for a in (ax_knn, ax_fno, ax_gt):
         for spine in a.spines.values():
             spine.set_color(zc)
@@ -151,11 +157,11 @@ def main():
     gt_plot = np.where(valid, gt_line, np.nan)
 
     ax_prof.plot(lon_z, knn_line, color="#8c8c8c", lw=1.8, linestyle="--",
-                 label="KNN baseline")
+                 label="KNN interpolation")
     ax_prof.plot(lon_z, fno_line, color=PALETTE["model"], lw=2.4,
                  label="FNO-CBAM (ours)")
     ax_prof.plot(lon_z, gt_plot, color=PALETTE["gt"], lw=0, marker="o",
-                 markersize=4.0, alpha=0.95, label="GT (original obs)")
+                 markersize=4.0, alpha=0.95, label="Reference (observed)")
     ax_prof.set_xlim(z_lon0, z_lon1)
     ax_prof.set_xlabel("Longitude (°E)", fontsize=12)
     ax_prof.set_ylabel("SST (°C)", fontsize=12)

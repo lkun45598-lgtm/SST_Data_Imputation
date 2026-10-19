@@ -64,7 +64,7 @@ def output_composition(pred, sst_seq, mask_seq):
     return composed
 
 
-def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std):
+def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std, grad_gamma=0.2):
     model.train()
     total_loss, total_missing, total_observed, total_grad = 0.0, 0.0, 0.0, 0.0
     total_mae = 0.0
@@ -94,8 +94,11 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
             sst_seq=sst_seq,
             alpha_missing=1.2,
             alpha_observed=0.0,  # 【改动】不需要observed loss
-            gamma=0.2,
-            beta_temporal=0.15, beta_range=0.01
+            gamma=grad_gamma,
+            # 关闭两个正则项：temporal含除零bug(已修但会主导优化信号)、range对有真值监督
+            # 的重建任务无直接帮助。实测原配置下重建损失仅占total loss的0.012%，模型在学
+            # 满足正则项而非重建SST。纯重建损失(missing+grad)作为干净基座。
+            beta_temporal=0.0, beta_range=0.0
         )
 
         optimizer.zero_grad()
@@ -134,7 +137,7 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
     }
 
 
-def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
+def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std, grad_gamma=0.2):
     model.eval()
     total_loss, total_missing, total_observed, total_grad = 0.0, 0.0, 0.0, 0.0
     total_mae, total_rmse, total_max = 0.0, 0.0, 0.0
@@ -166,8 +169,8 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
                 sst_seq=sst_seq,
                 alpha_missing=1.2,
                 alpha_observed=0.0,  # 【改动】不需要observed loss
-                gamma=0.2,
-                beta_temporal=0.15, beta_range=0.01
+                gamma=grad_gamma,
+                beta_temporal=0.0, beta_range=0.0  # 关闭正则项(见train_epoch说明)
             )
 
             pred_celsius = pred * norm_std + norm_mean
@@ -216,16 +219,18 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
     }
 
 
-def train_worker(rank, world_size):
+def train_worker(rank, world_size, config):
     setup_distributed(rank, world_size)
     device = torch.device(f'cuda:{rank}')
     torch.manual_seed(42 + rank)
     np.random.seed(42 + rank)
 
-    # 数据路径
-    data_dir = '/data/sst_data/sst_missing_value_imputation/processed_data'
-    save_dir = '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain'
-    batch_size = 4  # per GPU (总batch=16)
+    grad_gamma = config['grad_gamma']  # 梯度损失权重 (0=纯MSE, 与深度baseline对齐)
+
+    # 数据路径 (可移植:目标机 export OSTIA_DIR=/home/lz/sst_data/.../processed_data)
+    data_dir = os.environ.get('OSTIA_DIR', '/data/sst_data/sst_missing_value_imputation/processed_data')
+    save_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), config['save_dir'])
+    batch_size = 2  # per GPU × 8 = 16 (与原实验总batch一致)
 
     if rank == 0:
         os.makedirs(save_dir, exist_ok=True)
@@ -240,7 +245,7 @@ def train_worker(rank, world_size):
         print(f"\n配置:")
         print(f"  - 数据路径: {data_dir}")
         print(f"  - 输入: 30天序列 (60通道: 30×SST + 30×mask)")
-        print(f"  - Loss: 1.2×缺失 + 0.0×观测 + 0.2×梯度 + 0.15×时间连续性 + 0.01×温度范围")
+        print(f"  - Loss: 1.2×缺失 + 0.0×观测 + {grad_gamma}×梯度 (temporal/range 关闭)")
         print(f"  - 优化器: AdamW (lr=1e-3, weight_decay=1e-4)")
         print(f"  - 调度器: StepLR (step_size=15, gamma=0.5)")
         print(f"  - Epochs: 60")
@@ -289,8 +294,8 @@ def train_worker(rank, world_size):
     for epoch in range(num_epochs):
         train_sampler.set_epoch(epoch)
 
-        train_metrics = train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std)
-        valid_metrics = valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std)
+        train_metrics = train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std, grad_gamma=grad_gamma)
+        valid_metrics = valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std, grad_gamma=grad_gamma)
 
         if rank == 0:
             history['train'].append(train_metrics)
@@ -353,8 +358,17 @@ def train_worker(rank, world_size):
 
 
 def main():
-    world_size = 4
-    mp.spawn(train_worker, args=(world_size,), nprocs=world_size, join=True)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gpus', type=int, default=8, help='DDP GPU 数')
+    parser.add_argument('--grad-gamma', type=float, default=0.2,
+                        help='梯度损失权重(默认0.2; 设0=纯MSE,与深度baseline对齐)')
+    parser.add_argument('--save-dir', type=str, default='experiments/ostia_pretrain_clean',
+                        help='相对仓库根目录的保存路径')
+    args = parser.parse_args()
+    config = {'grad_gamma': args.grad_gamma, 'save_dir': args.save_dir}
+    world_size = args.gpus
+    mp.spawn(train_worker, args=(world_size, config), nprocs=world_size, join=True)
 
 
 if __name__ == '__main__':

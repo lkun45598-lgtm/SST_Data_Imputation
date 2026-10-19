@@ -1,0 +1,35 @@
+% Proxy Construction Ablation Table (Supplementary)
+% All variants use the main comparison's common JAXA reference SST fields.
+
+\begin{table}[htbp]
+\centering
+\caption{Ablation study on proxy construction components. The baseline uses the full pipeline (Temporal weighted fill → Masked Gaussian smoothing → Causal 3D KNN). Ablated variants remove one component while keeping training and evaluation protocols identical. All metrics are computed against common JAXA reference SST fields from 219 held-out target fields in Series 8, using 657 field--mask pairs across three nominal artificial extra-mask levels. Best results per metric are \textbf{bolded}.}
+\label{tab:proxy_ablation}
+\small
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+\multirow{2}{*}{Variant} & \multirow{2}{*}{Level} & \multicolumn{2}{c}{Pointwise Error} & \multirow{2}{*}{Bias (K)} & \multicolumn{2}{c}{Gradient Quality} \\
+\cmidrule(lr){3-4} \cmidrule(lr){6-7}
+& & MAE (K) $\downarrow$ & RMSE (K) $\downarrow$ & & Ratio $\to$1 & Corr $\uparrow$ \\
+\midrule
+\multirow{3}{*}{\textbf{Full (Ours)}}
+& Low (30\%)  & \textbf{0.328} & \textbf{0.423} & \textbf{+0.011} & \textbf{1.179} & \textbf{0.348} \\
+& Mid (55\%)  & \textbf{0.337} & \textbf{0.438} & \textbf{+0.013} & \textbf{1.135} & \textbf{0.363} \\
+& High (75\%) & \textbf{0.360} & \textbf{0.466} & \textbf{+0.032} & \textbf{1.084} & \textbf{0.380} \\
+\midrule
+\multirow{3}{*}{w/o Gaussian}
+& Low  & 0.484 & 0.616 & +0.083 & 0.408 & 0.161 \\
+& Mid  & 0.501 & 0.637 & +0.111 & 0.398 & 0.168 \\
+& High & 0.521 & 0.660 & +0.139 & 0.386 & 0.173 \\
+\midrule
+\multirow{3}{*}{w/o 3D KNN}
+& Low  & 0.508 & 0.638 & $-$0.028 & 0.426 & 0.152 \\
+& Mid  & 0.524 & 0.659 & +0.015 & 0.420 & 0.155 \\
+& High & 0.537 & 0.678 & +0.036 & 0.410 & 0.156 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\footnotesize
+\textbf{Full}: Temporal weighted fill (3-day lookback, same-UTC-hour, $w_d=1/d$) $\to$ Masked Gaussian ($\sigma=1.5$, only on temporal-filled pixels) $\to$ Causal 3D KNN ($K=20$, 7-day window, $\lambda_t=0.9$, bias correction). \textbf{w/o Gaussian}: Temporal $\to$ 3D KNN directly; deep missing regions remain NaN. \textbf{w/o 3D KNN}: Temporal $\to$ Gaussian only. \textbf{Gradient Ratio}: mean predicted gradient magnitude / mean reference gradient magnitude (ideal = 1.0; values $<1$ indicate over-smoothing). \textbf{Gradient Corr}: Pearson correlation of spatial gradient fields. All three variants trained with identical hyperparameters (60 epochs, real-cloud mask, clean OSTIA pretrain) and evaluated against the same JAXA reference SST fields.
+\end{table}

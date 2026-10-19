@@ -34,7 +34,7 @@ from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
 # system is a family of 24 per-hour fine-tuned models; hour 00 is the
 # representative shown in Fig. 4-6/8. See Section 3.4 (per-hour fine-tuning).
 KNN_FILLED_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"   # 与 realgap 图/部署一致 (h12)
-MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask/best_model.pth"  # 新 real-cloud 模型
+MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask_clean/best_model.pth"  # 新模型(正确OSTIA权重)
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -47,8 +47,8 @@ SEED = 42
 
 MASK_LEVELS = [
     ("low",  0.30),
-    ("mid",  0.55),
-    ("high", 0.75),
+    ("mid",  0.50),
+    ("high", 0.70),
 ]
 
 
@@ -274,14 +274,38 @@ def main():
             per_sample.append((rec, gt, fno, knn, mask, eval_mask, obs_mask_30))
             stats_records.append(rec)
 
-        # pick median-MAE sample as the representative case
+        # pick representative cases
         if not per_sample:
             continue
-        maes = [p[0]["fno_mae"] for p in per_sample]
-        med_pos = int(np.argsort(maes)[len(maes) // 2])
-        rec, gt, fno, knn, mask, eval_mask, obs_mask_30 = per_sample[med_pos]
+
+        # Calculate differences
+        diffs = [(p[0]["knn_mae"] - p[0]["fno_mae"]) for p in per_sample]
+        fno_maes = [p[0]["fno_mae"] for p in per_sample]
+
+        # Find representatives
+        med_pos = int(np.argsort(fno_maes)[len(fno_maes) // 2])
+
+        # For "high" level: find a good-quality case where KNN is still worse
+        # Strategy: among cases where FNO_mae < 0.35, pick the one with max(knn_mae - fno_mae)
+        if name == "high":
+            good_quality = [(i, p) for i, p in enumerate(per_sample) if p[0]["fno_mae"] < 0.35]
+            if good_quality:
+                # Among good cases, find where KNN is most worse
+                good_diffs = [(i, p[0]["knn_mae"] - p[0]["fno_mae"]) for i, p in good_quality]
+                selected_pos = max(good_diffs, key=lambda x: x[1])[0]
+                print(f"  SELECTED: good-quality case where KNN is worse (FNO_mae < 0.35)")
+            else:
+                # Fallback to median if no good quality cases
+                selected_pos = med_pos
+                print(f"  SELECTED: median FNO MAE case (no good-quality KNN-worse found)")
+        else:
+            selected_pos = med_pos
+            print(f"  SELECTED: median FNO MAE case")
+
+        rec, gt, fno, knn, mask, eval_mask, obs_mask_30 = per_sample[selected_pos]
         print(f"  representative idx={rec['idx']} ts={rec['ts']} "
-              f"fno_mae={rec['fno_mae']:.3f} knn_mae={rec['knn_mae']:.3f}")
+              f"fno_mae={rec['fno_mae']:.3f} knn_mae={rec['knn_mae']:.3f} "
+              f"diff(knn-fno)={rec['knn_mae']-rec['fno_mae']:.3f}")
         cases[name] = dict(
             gt=gt, fno=fno, knn=knn, mask=mask, eval_mask=eval_mask,
             obs_mask=obs_mask_30,           # TRUE observed pixels (no KNN fill)

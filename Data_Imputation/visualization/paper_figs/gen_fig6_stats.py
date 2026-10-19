@@ -1,6 +1,6 @@
-"""Aggregate statistics over many samples for figure 6.
+"""Aggregate full-test-set statistics for figure 6.
 
-Runs FNO-CBAM eval on ~45 samples across 3 mask levels and accumulates:
+Runs FNO-CBAM evaluation with the main-comparison protocol and accumulates:
   - spatial_err_sum, spatial_err_count: per-pixel mean error map
   - err_samples_flat: subsampled error values (for histogram)
   - pred_samples / gt_samples: paired pred-vs-GT (for scatter)
@@ -8,6 +8,7 @@ Runs FNO-CBAM eval on ~45 samples across 3 mask levels and accumulates:
 """
 import sys
 import json
+import os
 from pathlib import Path
 import numpy as np
 import torch
@@ -22,18 +23,21 @@ from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
 
 # Paper "Ours" = h12 real-cloud model (与 fig4/5/realgap 统一)
 KNN_FILLED_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"
-MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask/best_model.pth"
+MODEL_PATH = Path(os.environ.get(
+    "FNO_CKPT",
+    DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask_clean/best_model.pth",
+))
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 WINDOW_SIZE = 30
-GPU_ID = 7                       # 0/5/6训基线, 1/2/3/4重训 -> 用 7
+GPU_ID = int(os.environ.get("GPU_ID", "7"))
 SERIES_ID = 8   # held-out validation series (train=0..7, val=8); NOT a training series
-GAUSSIAN_SIGMA = 1.0
-SEED = 42
+NORM_MEAN, NORM_STD = 299.9221, 2.6919
+SEED = 0
 
 # More samples per level for richer statistics
-NUM_SAMPLES_PER_LEVEL = 20
+NUM_SAMPLES_PER_LEVEL = 9999  # large value -> use ALL candidate frames (full test set)
 MASK_LEVELS = [
     ("low",  0.30),
     ("mid",  0.55),
@@ -123,8 +127,7 @@ def main():
     ckpt = torch.load(MODEL_PATH, map_location=device, weights_only=False)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
-    norm_mean = ckpt.get("norm_mean", 299.9221)
-    norm_std = ckpt.get("norm_std", 2.6919)
+    norm_mean, norm_std = NORM_MEAN, NORM_STD
 
     path = KNN_FILLED_DIR / f"jaxa_knn_filled_{SERIES_ID:02d}.h5"
     print(f"loading {path}")
@@ -141,8 +144,12 @@ def main():
     ocean = 1 - land
 
     rng = np.random.default_rng(SEED)
+    pixel_rng = np.random.default_rng(SEED + 1)
     start = WINDOW_SIZE - 1
-    candidates = np.array([i for i in range(start, T) if obs_all[i].sum() > 5000])
+    candidates = np.array([
+        i for i in range(start, T)
+        if (obs_all[i] * ocean).sum() > 4000
+    ])
     print(f"candidate frames: {len(candidates)}")
 
     # Spatial accumulators
@@ -179,7 +186,6 @@ def main():
             gt = sst_seq[-1].copy()
             pred = predict_fno(model, sst_seq, miss_seq, mask,
                                norm_mean, norm_std, device)
-            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
 
             eval_mask = (mask * eligible).astype(bool)
             err = pred - gt
@@ -195,7 +201,7 @@ def main():
             yy, xx = np.where(valid_pix)
             if len(yy) > 0:
                 take = min(PIXELS_PER_SAMPLE, len(yy))
-                pick = rng.choice(len(yy), size=take, replace=False)
+                pick = pixel_rng.choice(len(yy), size=take, replace=False)
                 err_buffer.append(err[yy[pick], xx[pick]])
                 pred_buffer.append(pred[yy[pick], xx[pick]])
                 gt_buffer.append(gt[yy[pick], xx[pick]])

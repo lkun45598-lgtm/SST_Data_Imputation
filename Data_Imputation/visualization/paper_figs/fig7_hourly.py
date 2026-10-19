@@ -90,8 +90,8 @@ def main():
 
     # ===== (c) Mean diurnal SST cycle (spatial mean across SCS) =====
     ax_c = fig.add_subplot(gs[1, 0])
-    pred_c = k_to_c(diurnal["hourly_mean_pred"])
-    obs_c = k_to_c(diurnal["hourly_mean_obs"])
+    pred_c = k_to_c(np.array([diurnal[h]["spatial_pred_mean"] for h in hours]))
+    obs_c = k_to_c(np.array([diurnal[h]["spatial_obs_mean"] for h in hours]))
     ax_c.plot(hours, pred_c, "o-", color=PALETTE["model"],
               markeredgecolor="#1c4a72", markersize=7, linewidth=2.0,
               label="FNO-CBAM reconstruction")
@@ -101,6 +101,11 @@ def main():
     # Amplitude annotation
     amp_pred = np.nanmax(pred_c) - np.nanmin(pred_c)
     amp_obs = np.nanmax(obs_c) - np.nanmin(obs_c)
+    frame_counts = np.array([diurnal[h]["n_frames"] for h in hours], dtype=int)
+    if frame_counts.min() == frame_counts.max():
+        frame_count_label = f"n days = {frame_counts.min()}"
+    else:
+        frame_count_label = f"n days = {frame_counts.min()}–{frame_counts.max()}"
     ax_c.set_xlabel("Hour of day (UTC)", fontsize=12)
     ax_c.set_ylabel("Spatial mean SST (°C)", fontsize=12)
     ax_c.set_title("(c) Diurnal cycle (SCS spatial mean, July 2024)",
@@ -115,15 +120,15 @@ def main():
     annotate_metric(ax_c, [
         f"Pred amp:  {amp_pred:.2f} K",
         f"Obs amp:   {amp_obs:.2f} K",
-        f"n days = 31",
+        frame_count_label,
     ], loc="upper right", fontsize=11)
 
     # ===== (d) Point time series at (19°N, 115°E) =====
     ax_d = fig.add_subplot(gs[1, 1])
-    pp_mean = k_to_c(diurnal["point_pred_mean"])
-    pp_std = diurnal["point_pred_std"]  # already in K (= °C diff)
-    po_mean = k_to_c(diurnal["point_obs_mean"])
-    po_count = diurnal["point_obs_count"]
+    pp_mean = k_to_c(np.array([diurnal[h]["point_pred_mean"] for h in hours]))
+    pp_std = np.array([diurnal[h]["point_pred_std"] for h in hours])
+    po_mean = k_to_c(np.array([diurnal[h]["point_obs_mean"] for h in hours]))
+    po_count = np.array([diurnal[h]["point_obs_count"] for h in hours])
 
     # Plot pred with std-band
     ax_d.fill_between(hours, pp_mean - pp_std, pp_mean + pp_std,

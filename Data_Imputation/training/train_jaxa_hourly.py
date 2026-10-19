@@ -35,6 +35,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from inference.jaxa_inference_dataset import JAXAFinetuneDataset
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
+from losses.gradient_masks import torch_gradient_edge_masks, torch_boundary_edge_masks
 
 
 # ============================================================================
@@ -62,29 +63,30 @@ def masked_mse_loss(pred, target, loss_mask):
     return loss
 
 
-def masked_gradient_loss(pred, target, loss_mask):
+def masked_gradient_loss(pred, target, loss_mask, valid_ref_mask=None):
     """
     梯度匹配损失（在loss_mask区域）
 
     Args:
         pred: (B, 1, H, W)
         target: (B, 1, H, W)
-        loss_mask: (B, H, W)
+        loss_mask: (B, H, W) artificial supervision mask
+        valid_ref_mask: (B, H, W), valid original observed-ocean reference mask
 
     Returns:
         loss: scalar
     """
-    mask = loss_mask.unsqueeze(1)
+    if valid_ref_mask is None:
+        valid_ref_mask = loss_mask
+    mask_grad_y, mask_grad_x = torch_gradient_edge_masks(valid_ref_mask, loss_mask)
 
     # Y方向梯度
     pred_grad_y = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     target_grad_y = target[:, :, 1:, :] - target[:, :, :-1, :]
-    mask_grad_y = mask[:, :, 1:, :]
 
     # X方向梯度
     pred_grad_x = pred[:, :, :, 1:] - pred[:, :, :, :-1]
     target_grad_x = target[:, :, :, 1:] - target[:, :, :, :-1]
-    mask_grad_x = mask[:, :, :, 1:]
 
     # 计算梯度误差
     grad_loss_y = torch.abs(pred_grad_y - target_grad_y) * mask_grad_y
@@ -96,7 +98,7 @@ def masked_gradient_loss(pred, target, loss_mask):
     return total_grad_loss
 
 
-def boundary_smoothness_loss(composed, target, mask_seq):
+def boundary_smoothness_loss(composed, target, mask_seq, valid_ref_mask=None):
     """
     边界平滑loss：约束mask边界跨越处的预测梯度 ≈ 真实梯度
     只在mask边界像素对（内侧↔外侧）上计算，不影响内部区域
@@ -105,27 +107,24 @@ def boundary_smoothness_loss(composed, target, mask_seq):
         composed: (B, 1, H, W) 输出组合结果（已做output_composition）
         target: (B, 1, H, W) 真值（归一化后）
         mask_seq: (B, 30, H, W) mask序列
+        valid_ref_mask: (B, H, W), valid original observed-ocean reference mask
 
     Returns:
         loss: scalar
     """
     last_mask = mask_seq[:, -1:, :, :]  # (B, 1, H, W)
+    if valid_ref_mask is None:
+        valid_ref_mask = last_mask
 
-    # X方向：找跨越边界的相邻像素对
-    # enter_x: mask外 → mask内的边界像素（左侧是海洋，右侧是洞）
-    enter_x = ((last_mask[:, :, :, 1:] == 1) & (last_mask[:, :, :, :-1] == 0)).float()
-    # exit_x: mask内 → mask外的边界像素（左侧是洞，右侧是海洋）
-    exit_x = ((last_mask[:, :, :, :-1] == 1) & (last_mask[:, :, :, 1:] == 0)).float()
-    boundary_x = enter_x + exit_x
+    # X方向：找跨越人工掩码边界且两端均为有效参考海洋像素的相邻对
+    _, boundary_x = torch_boundary_edge_masks(last_mask, valid_ref_mask)
 
     pred_grad_x = composed[:, :, :, 1:] - composed[:, :, :, :-1]
     target_grad_x = target[:, :, :, 1:] - target[:, :, :, :-1]
     loss_x = (torch.abs(pred_grad_x - target_grad_x) * boundary_x).sum() / (boundary_x.sum() + 1e-8)
 
     # Y方向：同理
-    enter_y = ((last_mask[:, :, 1:, :] == 1) & (last_mask[:, :, :-1, :] == 0)).float()
-    exit_y = ((last_mask[:, :, :-1, :] == 1) & (last_mask[:, :, 1:, :] == 0)).float()
-    boundary_y = enter_y + exit_y
+    boundary_y, _ = torch_boundary_edge_masks(last_mask, valid_ref_mask)
 
     pred_grad_y = composed[:, :, 1:, :] - composed[:, :, :-1, :]
     target_grad_y = target[:, :, 1:, :] - target[:, :, :-1, :]
@@ -161,6 +160,7 @@ def output_composition(pred, sst_seq, mask_seq, land_mask=None):
 
 
 def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
+                       valid_ref_mask=None,
                        alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.0, alpha_boundary=0.1):
     """
     JAXA微调的组合损失（使用output composition后简化版）
@@ -169,6 +169,7 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
         pred: (B, 1, H, W) 预测值（已经过output composition）
         target: (B, 1, H, W) 真值（归一化后）
         loss_mask: (B, H, W) Loss区域 = artificial_mask ∩ original_obs_mask
+        valid_ref_mask: (B, H, W) original observed-ocean pixels eligible for gradients
         sst_seq: (B, 30, H, W) 输入SST序列（用于时间连续性）
         mask_seq: (B, 30, H, W) mask序列（用于边界平滑约束）
         alpha_mse: MSE权重（挖空区域重建）
@@ -184,7 +185,7 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
 
     # 梯度Loss (在挖空区域)
     if alpha_grad > 0:
-        loss_grad = masked_gradient_loss(pred, target, loss_mask)
+        loss_grad = masked_gradient_loss(pred, target, loss_mask, valid_ref_mask)
     else:
         loss_grad = torch.tensor(0.0, device=pred.device)
 
@@ -202,7 +203,7 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
 
     # 边界平滑约束 (可选)
     if mask_seq is not None and alpha_boundary > 0:
-        loss_boundary = boundary_smoothness_loss(pred, target, mask_seq)
+        loss_boundary = boundary_smoothness_loss(pred, target, mask_seq, valid_ref_mask)
     else:
         loss_boundary = torch.tensor(0.0, device=pred.device)
 
@@ -217,7 +218,7 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, mask_seq=None,
 
 def setup_distributed(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '29509'  # 换一个端口
+    os.environ.setdefault('MASTER_PORT', '29509')  # 可被环境变量覆盖(支持多队列并行)
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
@@ -230,7 +231,8 @@ def cleanup_distributed():
 # Training & Validation
 # ============================================================================
 
-def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std):
+def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std,
+                alpha_grad=0.2, alpha_boundary=0.1, alpha_temporal=0.0):
     model.train()
     total_loss = 0.0
     total_mse = 0.0
@@ -248,7 +250,9 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
         mask_seq = batch['mask_seq'].to(device).float()  # [B, 30, H, W]
         gt_sst = batch['ground_truth_sst'].to(device).unsqueeze(1).float()  # [B, 1, H, W]
         loss_mask = batch['loss_mask'].to(device).float()  # [B, H, W]
+        original_obs_mask = batch['original_obs_mask'].to(device).float()
         land_mask = batch['land_mask'].to(device).float()  # [B, H, W]
+        valid_ref_mask = original_obs_mask * (1 - land_mask)
 
         # Forward
         pred = model(sst_seq, mask_seq)
@@ -261,10 +265,11 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
             pred, gt_sst, loss_mask,
             sst_seq=sst_seq,
             mask_seq=mask_seq,
+            valid_ref_mask=valid_ref_mask,
             alpha_mse=1.0,
-            alpha_grad=0.2,
-            alpha_temporal=0.0,   # temporal loss excluded (ablation: no benefit)
-            alpha_boundary=0.1    # boundary loss (deployed objective)
+            alpha_grad=alpha_grad,
+            alpha_temporal=alpha_temporal,  # 时序损失（消融实验用）
+            alpha_boundary=alpha_boundary    # boundary loss (deployed objective)
         )
 
         # Backward
@@ -327,7 +332,9 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
             mask_seq = batch['mask_seq'].to(device).float()
             gt_sst = batch['ground_truth_sst'].to(device).unsqueeze(1).float()
             loss_mask = batch['loss_mask'].to(device).float()
+            original_obs_mask = batch['original_obs_mask'].to(device).float()
             land_mask = batch['land_mask'].to(device).float()
+            valid_ref_mask = original_obs_mask * (1 - land_mask)
 
             pred = model(sst_seq, mask_seq)
 
@@ -339,6 +346,7 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
                 pred, gt_sst, loss_mask,
                 sst_seq=sst_seq,
                 mask_seq=mask_seq,
+                valid_ref_mask=valid_ref_mask,
                 alpha_grad=0,  # 验证时不计算梯度loss
                 alpha_boundary=0  # 验证时不计算边界loss
             )
@@ -465,19 +473,44 @@ def train_worker(rank, world_size, config):
         print(f"  - Normalize: mean={train_dataset.mean:.2f}K, std={train_dataset.std:.2f}K")
 
     # 模型
-    model = FNO_CBAM_SST_Temporal(out_size=(451, 351), modes1=80, modes2=64, width=64, depth=6).to(device)
+    use_cbam = config.get('use_cbam', True)  # 默认使用 CBAM
+    model = FNO_CBAM_SST_Temporal(
+        out_size=(451, 351),
+        modes1=80,
+        modes2=64,
+        width=64,
+        depth=6,
+        use_cbam=use_cbam
+    ).to(device)
+
+    if rank == 0:
+        print(f"\n模型配置: {'FNO+CBAM' if use_cbam else '纯FNO'}")
+        print(f"  - CBAM: {'启用' if use_cbam else '禁用'}")
+        print(f"  - alpha_grad: {config['alpha_grad']}")
+        print(f"  - alpha_boundary: {config['alpha_boundary']}")
+        print(f"  - alpha_temporal: {config.get('alpha_temporal', 0.0)}")
 
     # 加载预训练权重
-    if pretrained_path and os.path.exists(pretrained_path):
+    if config.get('no_pretrain', False):
+        if rank == 0:
+            print("\n🚫 --no-pretrain 已设置，从零训练（不加载OSTIA预训练权重）")
+    elif pretrained_path and os.path.exists(pretrained_path):
         if rank == 0:
             print(f"\n加载预训练模型: {pretrained_path}")
         checkpoint = torch.load(pretrained_path, map_location=device)
-        if 'model_state_dict' in checkpoint:
-            model.load_state_dict(checkpoint['model_state_dict'])
-        else:
-            model.load_state_dict(checkpoint)
+
+        state_dict = checkpoint.get('model_state_dict', checkpoint)
+
+        # 根据模型是否使用 CBAM，灵活加载权重
+        # strict=False 允许跳过不匹配的参数（如 FNO only 跳过 CBAM 权重）
+        missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+
         if rank == 0:
             print("  ✓ 预训练权重加载成功")
+            if missing_keys:
+                print(f"  ⚠️ 模型中未找到的参数（{len(missing_keys)}个）: {missing_keys[:3]}...")
+            if unexpected_keys:
+                print(f"  ⚠️ 预训练中多余的参数（{len(unexpected_keys)}个）: {unexpected_keys[:3]}...")
     else:
         if rank == 0:
             print("\n⚠️ 未找到预训练模型，从头开始训练")
@@ -503,7 +536,10 @@ def train_worker(rank, world_size, config):
     for epoch in range(num_epochs):
         train_sampler.set_epoch(epoch)
 
-        train_metrics = train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std)
+        train_metrics = train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, norm_std,
+                                    alpha_grad=config.get('alpha_grad', 0.2),
+                                    alpha_boundary=config.get('alpha_boundary', 0.1),
+                                    alpha_temporal=config.get('alpha_temporal', 0.0))
         valid_metrics = valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std)
 
         scheduler.step()
@@ -583,6 +619,18 @@ def main():
                         help='realcloud 挖空占"观测区"的比例上界(观测区本就只~20-30%,不宜遮太多)')
     parser.add_argument('--save-suffix', type=str, default=None,
                         help='保存目录后缀(不指定时 realcloud 自动加 _realmask,避免覆盖现有模型)')
+    parser.add_argument('--alpha-grad', type=float, default=0.2,
+                        help='梯度损失权重(默认0.2; 设0=纯重建,与深度baseline对齐)')
+    parser.add_argument('--alpha-boundary', type=float, default=0.1,
+                        help='边界平滑损失权重(默认0.1; 设0=纯重建)')
+    parser.add_argument('--alpha-temporal', type=float, default=0.0,
+                        help='时序连续性损失权重(默认0.0; 消融实验用)')
+    parser.add_argument('--use-cbam', action='store_true',
+                        help='使用 CBAM 注意力模块(默认False=纯FNO; 消融实验用)')
+    parser.add_argument('--pretrained', type=str, default='experiments/ostia_pretrain_clean/best_model.pth',
+                        help='OSTIA预训base路径(相对仓库根); 纯MSE实验应指向 experiments/ostia_pretrain_mse/best_model.pth')
+    parser.add_argument('--no-pretrain', action='store_true',
+                        help='从零训练(不加载OSTIA预训练权重), 用于消融实验')
     args = parser.parse_args()
 
     # 配置
@@ -590,16 +638,22 @@ def main():
     suffix = args.save_suffix
     if suffix is None:
         suffix = '_realmask' if args.mask_mode == 'realcloud' else ''
+    _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # .../Data_Imputation (可移植)
     config = {
-        'data_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/hourly_data/h{hour_str}',
-        'save_dir': f'/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/jaxa_finetune_h{hour_str}{suffix}',
-        'pretrained_path': '/data1/user/lz/SST_Data_Imputation/Data_Imputation/experiments/ostia_pretrain/best_model.pth',
+        'data_dir': f'{_REPO}/experiments/hourly_data/h{hour_str}',
+        'save_dir': f'{_REPO}/experiments/jaxa_finetune_h{hour_str}{suffix}_clean',
+        'pretrained_path': f'{_REPO}/{args.pretrained}',
         'batch_size': args.batch_size,  # per GPU
         'num_epochs': args.epochs,
         'lr': 5e-4,  # 微调学习率
         'hour': args.hour,
         'mask_mode': args.mask_mode,
         'ratio_range': (args.ratio_lo, args.ratio_hi),
+        'alpha_grad': args.alpha_grad,
+        'alpha_boundary': args.alpha_boundary,
+        'alpha_temporal': args.alpha_temporal,  # 时序损失权重
+        'use_cbam': args.use_cbam,  # 是否使用 CBAM
+        'no_pretrain': args.no_pretrain,  # OSTIA消融：从零训练
     }
 
     world_size = args.gpus  # DDP GPU 数 (8卡)

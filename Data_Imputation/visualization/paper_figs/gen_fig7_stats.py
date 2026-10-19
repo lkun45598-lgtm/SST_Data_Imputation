@@ -1,330 +1,391 @@
-"""Aggregate statistics for figure 7 (per-hour analysis).
+"""Generate per-hour statistics for Figure 7 from the 24 final hourly models.
 
-Two evaluation parts:
-  Part A: artificial-mask MAE/RMSE per hour, for H=00..08 (KNN data limitation)
-  Part B: diurnal cycle from existing reconstruction archive (24 hours)
-          - mean SST per hour over many days (model output vs raw obs at obs pixels)
-          - point time series at (19°N, 115°E)
+Part A evaluates each model on all eligible Series-8 target fields with the
+same 30%, 55%, and 75% real-cloud-shaped extra masks as the main comparison.
+Part B directly reconstructs the naturally missing regions in July 2024 and
+summarizes the spatial-mean and pointwise diurnal cycles.
 """
+
+import argparse
 import sys
-import json
 from pathlib import Path
-from datetime import datetime
+
+import h5py
 import numpy as np
 import torch
-import h5py
-import netCDF4 as nc
 from tqdm import tqdm
-from scipy.ndimage import gaussian_filter
+
 
 DATA_IMPUTATION_DIR = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(DATA_IMPUTATION_DIR))
+
+from inference.real_cloud_mask import RealCloudMaskGenerator, build_cloud_bank
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
 
-# H=00 uses the base FNO_CBAM directory (no h00/ subdir); H=01..23 use hourly_data/h{HH}/
-KNN_BASE_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
+
 KNN_HOURLY_ROOT = DATA_IMPUTATION_DIR / "experiments/hourly_data"
 HOURLY_MODEL_ROOT = DATA_IMPUTATION_DIR / "experiments"
-RECON_NC_ROOT = Path("/data/sst_data/SST_Data_Imputation")
-RAW_NC_ROOT = Path("/data/sst_data/sst_missing_value_imputation/jaxa_data/jaxa_extract_L3")
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 WINDOW_SIZE = 30
-GPU_ID = 3
-GAUSSIAN_SIGMA = 1.0
-SEED = 42
-
-# All 24 hours now available (H=00 in base dir, H=01..23 in hourly_data/h{HH}/)
-EVAL_HOURS = list(range(0, 24))
-SAMPLES_PER_HOUR = 10
-SERIES_TO_USE = 8  # held-out validation series (train=0..7, val=8); NOT a training series
-
-# Diurnal cycle settings: scan 2024-07 (a full month with good coverage)
-DIURNAL_MONTH = "202407"
+SERIES_TO_USE = 8
+SEED = 0
+DONOR_SERIES = [0, 3, 6]
+MASK_LEVELS = [("low", 0.30), ("mid", 0.55), ("high", 0.75)]
+DIURNAL_MONTH = "2024-07"
 POINT_LAT = 19.0
 POINT_LON = 115.0
 
 
-class SquareMaskGenerator:
-    def __init__(self, mask_ratio, min_size=10, max_size=50, seed=None):
-        self.mask_ratio = mask_ratio
-        self.min_size = min_size
-        self.max_size = max_size
-        self.rng = np.random.default_rng(seed)
-
-    def generate(self, valid_mask):
-        H, W = valid_mask.shape
-        artificial = np.zeros((H, W), dtype=np.float32)
-        valid_count = valid_mask.sum()
-        if valid_count == 0:
-            return artificial
-        target = int(valid_count * self.mask_ratio)
-        current = 0
-        ys, xs = np.where(valid_mask == 1)
-        if len(ys) == 0:
-            return artificial
-        y_min, y_max = ys.min(), ys.max()
-        x_min, x_max = xs.min(), xs.max()
-        attempts, max_attempts = 0, 2000
-        while current < target and attempts < max_attempts:
-            size = self.rng.integers(self.min_size, self.max_size + 1)
-            if y_max - size < y_min or x_max - size < x_min:
-                attempts += 1
-                continue
-            y0 = self.rng.integers(y_min, max(y_min + 1, y_max - size + 1))
-            x0 = self.rng.integers(x_min, max(x_min + 1, x_max - size + 1))
-            y1 = min(y0 + size, H)
-            x1 = min(x0 + size, W)
-            region = valid_mask[y0:y1, x0:x1].copy()
-            artificial[y0:y1, x0:x1] = np.where(region == 1, 1.0,
-                                                artificial[y0:y1, x0:x1])
-            current = (artificial * valid_mask).sum()
-            attempts += 1
-        return artificial
-
-
-def gauss_filter(sst, land_mask, sigma, fill_region=None):
-    """fill_region 给定时只在该区(填充/masked区)写回滤波值，观测保留原值。"""
-    valid = ~np.isnan(sst) & (land_mask == 0)
-    if valid.sum() == 0:
-        return sst
-    mean_v = np.nanmean(sst)
-    fill = sst.copy()
-    fill[~valid] = mean_v
-    out = gaussian_filter(fill, sigma=sigma)
-    write = valid if fill_region is None else (valid & (fill_region == 1))
-    return np.where(write, out, np.where(valid, sst, np.nan))
-
-
 def load_hourly_model(hour, device):
-    """Load model for hour H. H=00 uses base 'jaxa_finetune', H>=1 uses 'jaxa_finetune_h{HH}'."""
-    if hour == 0:
-        path = HOURLY_MODEL_ROOT / "jaxa_finetune/best_model.pth"
-    else:
-        path = HOURLY_MODEL_ROOT / f"jaxa_finetune_h{hour:02d}/best_model.pth"
+    checkpoint_path = (
+        HOURLY_MODEL_ROOT
+        / f"jaxa_finetune_h{hour:02d}_realmask_clean/best_model.pth"
+    )
     model = FNO_CBAM_SST_Temporal(
-        out_size=(451, 351), modes1=80, modes2=64, width=64, depth=6,
+        out_size=(451, 351),
+        modes1=80,
+        modes2=64,
+        width=64,
+        depth=6,
         cbam_reduction_ratio=16,
     ).to(device)
-    ckpt = torch.load(path, map_location=device, weights_only=False)
-    model.load_state_dict(ckpt["model_state_dict"])
+    checkpoint = torch.load(
+        checkpoint_path, map_location=device, weights_only=False
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
-    mean = ckpt.get("norm_mean", 299.9221)
-    std = ckpt.get("norm_std", 2.6919)
-    return model, mean, std
+    norm_mean = float(checkpoint.get("norm_mean", 299.9221))
+    norm_std = float(checkpoint.get("norm_std", 2.6919))
+    return model, norm_mean, norm_std
 
 
-def predict_fno(model, sst_seq, miss_seq, artificial_mask, norm_mean, norm_std, device):
-    sst_input = sst_seq.copy()
-    sst_input[-1] = np.where(artificial_mask > 0, norm_mean, sst_input[-1])
-    mask_seq = miss_seq.copy().astype(np.float32)
-    mask_seq[-1] = artificial_mask
-    sst_norm = (sst_input - norm_mean) / norm_std
-    sst_norm = np.nan_to_num(sst_norm, nan=0.0)
-    st = torch.from_numpy(sst_norm).unsqueeze(0).float().to(device)
-    mt = torch.from_numpy(mask_seq).unsqueeze(0).to(device)
+def make_window(sst_all, miss_all, target_index):
+    indices = [
+        max(0, target_index - (WINDOW_SIZE - 1) + offset)
+        for offset in range(WINDOW_SIZE)
+    ]
+    return (
+        np.stack([sst_all[index] for index in indices]).astype(np.float32),
+        np.stack([miss_all[index] for index in indices]).astype(np.float32),
+    )
+
+
+def run_model(model, sst_sequence, mask_sequence, norm_mean, norm_std, device):
+    normalized = np.nan_to_num(
+        (sst_sequence - norm_mean) / norm_std, nan=0.0
+    )
+    sst_tensor = torch.from_numpy(normalized).unsqueeze(0).float().to(device)
+    mask_tensor = torch.from_numpy(mask_sequence).unsqueeze(0).float().to(device)
     with torch.no_grad():
-        pred = model(st, mt)
-    pred_k = pred.squeeze().cpu().numpy() * norm_std + norm_mean
-    full = sst_seq[-1].copy()
-    full = np.where(artificial_mask > 0, pred_k, full)
-    return full
+        prediction = model(sst_tensor, mask_tensor)
+    return prediction.squeeze().cpu().numpy() * norm_std + norm_mean
 
 
-# ====== Part A: per-hour MAE/RMSE for H=00..08 ======
-def eval_per_hour(device):
-    print("\n===== Part A: per-hour MAE/RMSE (H=00..08, artificial mask 0.50) =====")
-    per_hour_metrics = {}
-    rng = np.random.default_rng(SEED)
-    gen = SquareMaskGenerator(mask_ratio=0.50, seed=SEED)
+def predict_extra_mask(
+    model,
+    sst_sequence,
+    missing_sequence,
+    artificial_mask,
+    norm_mean,
+    norm_std,
+    device,
+):
+    model_input = sst_sequence.copy()
+    model_input[-1] = np.where(
+        artificial_mask > 0, norm_mean, model_input[-1]
+    )
+    mask_input = missing_sequence.copy().astype(np.float32)
+    mask_input[-1] = artificial_mask
+    raw_prediction = run_model(
+        model, model_input, mask_input, norm_mean, norm_std, device
+    )
+    return np.where(artificial_mask > 0, raw_prediction, sst_sequence[-1])
 
-    for H in EVAL_HOURS:
-        if H == 0:
-            knn_path = KNN_BASE_DIR / f"jaxa_knn_filled_{SERIES_TO_USE:02d}.h5"
-        else:
-            knn_path = KNN_HOURLY_ROOT / f"h{H:02d}" / f"jaxa_knn_filled_{SERIES_TO_USE:02d}.h5"
-        if not knn_path.exists():
-            print(f"  H={H:02d}: KNN data missing at {knn_path}, skipping")
-            continue
-        print(f"\n  H={H:02d}: load model + data")
-        model, mean, std = load_hourly_model(H, device)
-        with h5py.File(knn_path, "r") as f:
-            sst_all = f["sst_data"][:]
-            obs_all = f["original_obs_mask"][:]
-            miss_all = f["original_missing_mask"][:]
-            land = f["land_mask"][:]
-        T = sst_all.shape[0]
-        ocean = 1 - land
-        start = WINDOW_SIZE - 1
-        candidates = np.array([i for i in range(start, T) if obs_all[i].sum() > 5000])
-        idx_sample = rng.choice(candidates, size=min(SAMPLES_PER_HOUR, len(candidates)),
-                                replace=False)
-        mae_list, rmse_list = [], []
-        for idx in tqdm(idx_sample, desc=f"    H={H:02d}", leave=False):
-            sst_seq = np.zeros((WINDOW_SIZE, *sst_all.shape[1:]), dtype=np.float32)
-            miss_seq = np.zeros_like(sst_seq, dtype=np.float32)
-            for t in range(WINDOW_SIZE):
-                s = max(0, idx - (WINDOW_SIZE - 1) + t)
-                sst_seq[t] = sst_all[s]
-                miss_seq[t] = miss_all[s]
-            eligible = obs_all[idx] * ocean
-            if eligible.sum() < 2000:
-                continue
-            mask = gen.generate(eligible.astype(np.float32))
-            gt = sst_seq[-1].copy()
-            pred = predict_fno(model, sst_seq, miss_seq, mask, mean, std, device)
-            pred = gauss_filter(pred, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
-            eval_m = (mask * eligible).astype(bool)
-            if eval_m.sum() == 0:
-                continue
-            diff = pred[eval_m] - gt[eval_m]
-            mae_list.append(float(np.abs(diff).mean()))
-            rmse_list.append(float(np.sqrt((diff ** 2).mean())))
-        per_hour_metrics[H] = dict(
-            n=len(mae_list),
-            mae_mean=float(np.mean(mae_list)) if mae_list else np.nan,
-            mae_std=float(np.std(mae_list)) if mae_list else np.nan,
-            rmse_mean=float(np.mean(rmse_list)) if rmse_list else np.nan,
-            rmse_std=float(np.std(rmse_list)) if rmse_list else np.nan,
+
+def predict_natural_gaps(
+    model,
+    sst_sequence,
+    missing_sequence,
+    observed_target,
+    land_mask,
+    norm_mean,
+    norm_std,
+    device,
+):
+    ocean = land_mask == 0
+    target_missing = (observed_target == 0) & ocean
+    model_input = sst_sequence.copy()
+    model_input[-1] = np.where(
+        target_missing, norm_mean, model_input[-1]
+    )
+    mask_input = missing_sequence.copy().astype(np.float32)
+    mask_input[-1] = target_missing.astype(np.float32)
+    raw_prediction = run_model(
+        model, model_input, mask_input, norm_mean, norm_std, device
+    )
+    reconstruction = np.where(
+        target_missing, raw_prediction, sst_sequence[-1]
+    )
+    return np.where(ocean, reconstruction, np.nan)
+
+
+def summarize(values):
+    values = np.asarray(values, dtype=np.float64)
+    return {
+        "mean": float(np.mean(values)) if values.size else np.nan,
+        "std": float(np.std(values)) if values.size else np.nan,
+    }
+
+
+def compute_diurnal_for_hour(
+    hour,
+    model,
+    sst_all,
+    obs_all,
+    miss_all,
+    land,
+    timestamps,
+    latitude,
+    longitude,
+    norm_mean,
+    norm_std,
+    device,
+):
+    month_indices = [
+        index
+        for index, timestamp in enumerate(timestamps)
+        if timestamp.startswith(DIURNAL_MONTH)
+    ]
+    point_y = int(np.argmin(np.abs(latitude - POINT_LAT)))
+    point_x = int(np.argmin(np.abs(longitude - POINT_LON)))
+    ocean = land == 0
+
+    spatial_predictions = []
+    spatial_observations = []
+    point_predictions = []
+    point_observations = []
+
+    for target_index in tqdm(
+        month_indices, desc=f"    H={hour:02d} natural gaps", leave=False
+    ):
+        sst_sequence, missing_sequence = make_window(
+            sst_all, miss_all, target_index
         )
-        print(f"    H={H:02d}: n={len(mae_list)}, MAE={per_hour_metrics[H]['mae_mean']:.4f}, "
-              f"RMSE={per_hour_metrics[H]['rmse_mean']:.4f}")
-        # free model
+        reconstruction = predict_natural_gaps(
+            model,
+            sst_sequence,
+            missing_sequence,
+            obs_all[target_index],
+            land,
+            norm_mean,
+            norm_std,
+            device,
+        )
+        valid_reconstruction = ocean & np.isfinite(reconstruction)
+        if valid_reconstruction.any():
+            spatial_predictions.append(
+                float(np.mean(reconstruction[valid_reconstruction]))
+            )
+        observed = (obs_all[target_index] > 0) & ocean
+        if observed.any():
+            spatial_observations.append(float(np.mean(sst_all[target_index][observed])))
+        if np.isfinite(reconstruction[point_y, point_x]):
+            point_predictions.append(float(reconstruction[point_y, point_x]))
+        if observed[point_y, point_x]:
+            point_observations.append(float(sst_all[target_index, point_y, point_x]))
+
+    spatial_prediction_stats = summarize(spatial_predictions)
+    spatial_observation_stats = summarize(spatial_observations)
+    point_prediction_stats = summarize(point_predictions)
+    point_observation_stats = summarize(point_observations)
+    return {
+        "n_frames": len(month_indices),
+        "spatial_pred_mean": spatial_prediction_stats["mean"],
+        "spatial_obs_mean": spatial_observation_stats["mean"],
+        "spatial_obs_count": len(spatial_observations),
+        "point_pred_mean": point_prediction_stats["mean"],
+        "point_pred_std": point_prediction_stats["std"],
+        "point_obs_mean": point_observation_stats["mean"],
+        "point_obs_count": len(point_observations),
+        "point_lat": float(latitude[point_y]),
+        "point_lon": float(longitude[point_x]),
+    }
+
+
+def evaluate_hours(device, hours, samples_per_level=None, skip_diurnal=False):
+    per_hour_metrics = {}
+    per_hour_diurnal = {}
+    random_generator = np.random.default_rng(SEED)
+
+    for hour in hours:
+        data_dir = KNN_HOURLY_ROOT / f"h{hour:02d}"
+        data_path = data_dir / f"jaxa_knn_filled_{SERIES_TO_USE:02d}.h5"
+        print(f"\nH={hour:02d}: loading final model and {data_path.name}")
+        model, norm_mean, norm_std = load_hourly_model(hour, device)
+        with h5py.File(data_path, "r") as data_file:
+            sst_all = data_file["sst_data"][:]
+            obs_all = data_file["original_obs_mask"][:]
+            miss_all = data_file["original_missing_mask"][:]
+            land = data_file["land_mask"][:]
+            latitude = data_file["latitude"][:]
+            longitude = data_file["longitude"][:]
+            timestamps = [
+                value.decode() if isinstance(value, bytes) else str(value)
+                for value in data_file["timestamps"][:]
+            ]
+
+        ocean = 1 - land
+        candidates = np.array(
+            [
+                index
+                for index in range(WINDOW_SIZE - 1, len(sst_all))
+                if (obs_all[index] * ocean).sum() > 4000
+            ]
+        )
+        cloud_bank = build_cloud_bank(
+            [
+                str(data_dir / f"jaxa_knn_filled_{series_id:02d}.h5")
+                for series_id in DONOR_SERIES
+            ],
+            max_donors=400,
+            seed=7,
+        )
+
+        all_mae = []
+        all_rmse = []
+        by_level = {}
+        for level_name, level in MASK_LEVELS:
+            if samples_per_level is None:
+                selected_indices = candidates
+            else:
+                selected_indices = random_generator.choice(
+                    candidates,
+                    size=min(samples_per_level, len(candidates)),
+                    replace=False,
+                )
+            mask_generator = RealCloudMaskGenerator(
+                cloud_bank, seed=int(level * 1000)
+            )
+            level_mae = []
+            level_rmse = []
+            for target_index in tqdm(
+                selected_indices,
+                desc=f"    H={hour:02d} {level_name}",
+                leave=False,
+            ):
+                sst_sequence, missing_sequence = make_window(
+                    sst_all, miss_all, target_index
+                )
+                eligible = obs_all[target_index] * ocean
+                artificial_mask = mask_generator.generate(
+                    eligible.astype(np.float32), target_ratio=level
+                )
+                evaluation_mask = (artificial_mask * eligible).astype(bool)
+                if not evaluation_mask.any():
+                    continue
+                prediction = predict_extra_mask(
+                    model,
+                    sst_sequence,
+                    missing_sequence,
+                    artificial_mask,
+                    norm_mean,
+                    norm_std,
+                    device,
+                )
+                difference = prediction[evaluation_mask] - sst_sequence[-1][evaluation_mask]
+                level_mae.append(float(np.mean(np.abs(difference))))
+                level_rmse.append(float(np.sqrt(np.mean(difference ** 2))))
+
+            all_mae.extend(level_mae)
+            all_rmse.extend(level_rmse)
+            by_level[level_name] = {
+                "target_ratio": level,
+                "n": len(level_mae),
+                "mae_mean": summarize(level_mae)["mean"],
+                "mae_std": summarize(level_mae)["std"],
+                "rmse_mean": summarize(level_rmse)["mean"],
+                "rmse_std": summarize(level_rmse)["std"],
+            }
+
+        per_hour_metrics[hour] = {
+            "n": len(all_mae),
+            "target_fields": len(candidates),
+            "mae_mean": summarize(all_mae)["mean"],
+            "mae_std": summarize(all_mae)["std"],
+            "rmse_mean": summarize(all_rmse)["mean"],
+            "rmse_std": summarize(all_rmse)["std"],
+            "by_level": by_level,
+        }
+        print(
+            f"H={hour:02d}: target_fields={len(candidates)}, pairs={len(all_mae)}, "
+            f"MAE={per_hour_metrics[hour]['mae_mean']:.4f} K, "
+            f"RMSE={per_hour_metrics[hour]['rmse_mean']:.4f} K"
+        )
+
+        if not skip_diurnal:
+            per_hour_diurnal[hour] = compute_diurnal_for_hour(
+                hour,
+                model,
+                sst_all,
+                obs_all,
+                miss_all,
+                land,
+                timestamps,
+                latitude,
+                longitude,
+                norm_mean,
+                norm_std,
+                device,
+            )
+
         del model
         torch.cuda.empty_cache()
-    return per_hour_metrics
 
-
-# ====== Part B: diurnal cycle from archive ======
-def compute_diurnal_from_archive():
-    """For each hour 0..23, average SST across the SCS region across all days in DIURNAL_MONTH.
-
-    Returns:
-      hourly_mean_sst:   [24] mean reconstructed SST in K over all days/ocean
-      hourly_mean_obs:   [24] mean raw observed SST at the same days
-      hourly_n_obs_pix:  [24] number of observed pixels averaged
-      point_per_day:     {day_str: {hour: pred_K}} reconstruction at the point
-      point_obs_per_day: {day_str: {hour: obs_K or NaN}}
-    """
-    month_dir = RECON_NC_ROOT / DIURNAL_MONTH
-    if not month_dir.exists():
-        print(f"WARN: archive not found {month_dir}")
-        return None
-    raw_month_dir = RAW_NC_ROOT / DIURNAL_MONTH
-
-    print(f"\n===== Part B: diurnal cycle from archive {DIURNAL_MONTH} =====")
-
-    day_dirs = sorted([d for d in month_dir.iterdir() if d.is_dir()])
-    print(f"days available: {len(day_dirs)}")
-
-    # Setup: read one file to get lat/lon
-    first_nc = list(day_dirs[0].iterdir())[0]
-    with nc.Dataset(first_nc) as ds:
-        lat = ds.variables["lat"][:]
-        lon = ds.variables["lon"][:]
-    # Closest grid index to the point
-    iy = int(np.argmin(np.abs(lat - POINT_LAT)))
-    ix = int(np.argmin(np.abs(lon - POINT_LON)))
-    print(f"point lat={lat[iy]:.3f} lon={lon[ix]:.3f}")
-
-    # Per-hour accumulators
-    sum_pred = np.zeros(24, dtype=np.float64)
-    count_pred = np.zeros(24, dtype=np.int64)
-    sum_obs = np.zeros(24, dtype=np.float64)
-    count_obs = np.zeros(24, dtype=np.int64)
-    point_pred = {h: [] for h in range(24)}
-    point_obs = {h: [] for h in range(24)}
-
-    for day_dir in tqdm(day_dirs, desc="diurnal aggregate"):
-        for h in range(24):
-            day_str = day_dir.name  # e.g., "15"
-            ts_str = f"{DIURNAL_MONTH}{day_str}{h:02d}0000"
-            pred_path = day_dir / f"{ts_str}.nc"
-            raw_path = raw_month_dir / day_str / f"{ts_str}.nc"
-            if not pred_path.exists():
-                continue
-            try:
-                with nc.Dataset(pred_path) as ds:
-                    pred = ds.variables["sea_surface_temperature"][:]
-                    if pred.ndim == 3:
-                        pred = pred[0]
-                    if hasattr(pred, "mask"):
-                        pred = np.where(pred.mask, np.nan, pred.filled())
-                    pred = np.array(pred, dtype=np.float32)
-            except Exception as e:
-                continue
-            valid = ~np.isnan(pred)
-            if valid.sum() > 0:
-                sum_pred[h] += float(np.nanmean(pred[valid]))
-                count_pred[h] += 1
-                # Point value
-                if not np.isnan(pred[iy, ix]):
-                    point_pred[h].append(float(pred[iy, ix]))
-
-            # Raw observation
-            if raw_path.exists():
-                try:
-                    with nc.Dataset(raw_path) as ds:
-                        raw = ds.variables["sea_surface_temperature"][:]
-                        if raw.ndim == 3:
-                            raw = raw[0]
-                        if hasattr(raw, "mask"):
-                            raw = np.where(raw.mask, np.nan, raw.filled())
-                        raw = np.array(raw, dtype=np.float32)
-                except Exception:
-                    raw = None
-                if raw is not None:
-                    valid_raw = ~np.isnan(raw)
-                    if valid_raw.sum() > 0:
-                        sum_obs[h] += float(np.nanmean(raw[valid_raw]))
-                        count_obs[h] += 1
-                    if not np.isnan(raw[iy, ix]):
-                        point_obs[h].append(float(raw[iy, ix]))
-
-    hourly_mean_pred = np.where(count_pred > 0, sum_pred / np.maximum(count_pred, 1), np.nan)
-    hourly_mean_obs = np.where(count_obs > 0, sum_obs / np.maximum(count_obs, 1), np.nan)
-
-    # Point summaries
-    point_pred_mean = np.array([np.mean(point_pred[h]) if point_pred[h] else np.nan
-                                for h in range(24)])
-    point_pred_std = np.array([np.std(point_pred[h]) if point_pred[h] else np.nan
-                               for h in range(24)])
-    point_obs_mean = np.array([np.mean(point_obs[h]) if point_obs[h] else np.nan
-                               for h in range(24)])
-    point_obs_count = np.array([len(point_obs[h]) for h in range(24)])
-
-    print(f"\nHourly mean pred (K): {[f'{v:.2f}' for v in hourly_mean_pred]}")
-    print(f"Hourly obs count: {count_obs}")
-    print(f"Point obs count per hour: {point_obs_count}")
-
-    return dict(
-        hourly_mean_pred=hourly_mean_pred,
-        hourly_mean_obs=hourly_mean_obs,
-        hourly_count_obs=count_obs,
-        point_pred_mean=point_pred_mean,
-        point_pred_std=point_pred_std,
-        point_obs_mean=point_obs_mean,
-        point_obs_count=point_obs_count,
-        point_lat=float(lat[iy]),
-        point_lon=float(lon[ix]),
-    )
+    return per_hour_metrics, per_hour_diurnal
 
 
 def main():
-    device = torch.device(f"cuda:{GPU_ID}" if torch.cuda.is_available() else "cpu")
-    print(f"device: {device}")
-
-    per_hour = eval_per_hour(device)
-    diurnal = compute_diurnal_from_archive()
-
-    out = CACHE_DIR / "fig7_stats.npz"
-    np.savez_compressed(
-        out,
-        per_hour=np.array(per_hour, dtype=object),
-        diurnal=np.array(diurnal, dtype=object) if diurnal is not None else None,
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu", type=int, default=0)
+    parser.add_argument(
+        "--hours",
+        default=None,
+        help="Comma-separated hour subset; default evaluates all 24 hours.",
     )
-    print(f"\nsaved -> {out}")
+    parser.add_argument(
+        "--nsamples",
+        type=int,
+        default=None,
+        help="Optional smoke-test sample count per level; default uses all fields.",
+    )
+    parser.add_argument("--out-name", default="fig7_stats.npz")
+    parser.add_argument("--skip-diurnal", action="store_true")
+    args = parser.parse_args()
+
+    hours = (
+        list(range(24))
+        if args.hours is None
+        else [int(hour) for hour in args.hours.split(",")]
+    )
+    device = torch.device(
+        f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu"
+    )
+    print(f"device={device}, hours={hours}, series={SERIES_TO_USE}")
+    per_hour, diurnal = evaluate_hours(
+        device,
+        hours,
+        samples_per_level=args.nsamples,
+        skip_diurnal=args.skip_diurnal,
+    )
+    output_path = CACHE_DIR / args.out_name
+    np.savez_compressed(
+        output_path,
+        per_hour=np.array(per_hour, dtype=object),
+        diurnal=np.array(diurnal, dtype=object),
+    )
+    print(f"saved -> {output_path}")
 
 
 if __name__ == "__main__":

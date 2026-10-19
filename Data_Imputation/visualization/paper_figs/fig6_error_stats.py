@@ -2,8 +2,8 @@
 
 (a) Mean |error| spatial map across samples
 (b) Error histogram with mean / std annotation
-(c) Predicted vs ground truth scatter (with 1:1 line and R²)
-(d) Per-sample MAE vs mask ratio (binned box/violin)
+(c) Reconstructed vs ground truth scatter (with 1:1 line and R²)
+(d) Per-sample MAE vs realized withheld fraction (binned box/violin)
 """
 import sys
 from pathlib import Path
@@ -54,8 +54,7 @@ def main():
                             spatial_err_sum / np.maximum(spatial_err_count, 1),
                             np.nan)
 
-    # Smooth the spatial error map: 60 samples is sparse per-pixel coverage
-    # so each pixel is noisy. A small Gaussian smooth reveals the macro pattern.
+    # Smooth the spatial error map to reduce per-pixel sampling noise.
     valid_mask = ~np.isnan(mean_err)
     fill_value = np.nanmean(mean_err)
     smoothed = mean_err.copy()
@@ -115,7 +114,7 @@ def main():
     bins = np.linspace(-lim, lim, 80)
     counts, edges, _ = ax_b.hist(err, bins=bins, color=PALETTE["model"],
                                  edgecolor="#22425a", alpha=0.85, linewidth=0.4,
-                                 density=False, label="Observed")
+                                 density=False, label="Error samples")
     # KDE fit (much better than normal for heavy-tailed data)
     # Subsample to keep KDE fast
     rng = np.random.default_rng(0)
@@ -176,9 +175,9 @@ def main():
               label=f"linear fit: y={slope:.3f}x{intercept:+.2f}", zorder=3)
     ax_c.set_xlim(lo, hi)
     ax_c.set_ylim(lo, hi)
-    ax_c.set_xlabel("Ground truth SST (°C)", fontsize=13)
-    ax_c.set_ylabel("Predicted SST (°C)", fontsize=13)
-    ax_c.set_title("(c) Predicted vs ground truth",
+    ax_c.set_xlabel("Reference SST (°C)", fontsize=13)
+    ax_c.set_ylabel("Reconstructed SST (°C)", fontsize=13)
+    ax_c.set_title("(c) Reconstructed vs reference",
                    fontsize=15, pad=8, fontweight="bold")
     ax_c.tick_params(labelsize=12)
     ax_c.set_aspect("equal")
@@ -194,7 +193,7 @@ def main():
     cb_c.ax.tick_params(labelsize=11)
     cb_c.outline.set_linewidth(0.6)
 
-    # ===== (d) Error vs mask ratio (boxplot) =====
+    # ===== (d) Error vs realized withheld fraction (boxplot) =====
     ax_d = fig.add_subplot(gs[1, 1])
     # Bin samples by actual_ratio
     records = list(sample_records)
@@ -202,16 +201,18 @@ def main():
     maes = np.array([r["mae"] for r in records])
     levels = np.array([r["level"] for r in records])
 
-    bin_edges = [0.0, 0.40, 0.65, 1.0]
-    bin_labels = ["≤40%", "40-65%", ">65%"]
-    boxes_data = []
-    for lo_, hi_ in zip(bin_edges[:-1], bin_edges[1:]):
-        sel = (ratios >= lo_) & (ratios < hi_)
-        boxes_data.append(maes[sel])
+    # Use explicit inequalities so the three realized-rate groups are
+    # disjoint and include the boundary cases.
+    bin_labels = [r"$r\leq40\%$", r"$40\%<r<65\%$", r"$r\geq65\%$"]
+    bin_masks = [ratios <= 0.40,
+                 (ratios > 0.40) & (ratios < 0.65),
+                 ratios >= 0.65]
+    boxes_data = [maes[sel] for sel in bin_masks]
     positions = np.arange(len(boxes_data))
 
     bp = ax_d.boxplot(boxes_data, positions=positions, widths=0.58,
                       patch_artist=True, showfliers=False,
+                      whis=[10, 90],   # 10th-90th percentile whiskers (avoid tall tails)
                       medianprops=dict(color="#222", lw=2.0),
                       whiskerprops=dict(color="#444", lw=1.2),
                       capprops=dict(color="#444", lw=1.2),
@@ -221,29 +222,21 @@ def main():
         patch.set_facecolor(c)
         patch.set_edgecolor("#333")
         patch.set_alpha(0.88)
-    # Overlay all individual sample points (jittered)
-    for i, vals in enumerate(boxes_data):
-        if len(vals) == 0:
-            continue
-        jitter = (rng.random(len(vals)) - 0.5) * 0.22
-        ax_d.scatter(np.full(len(vals), i) + jitter, vals,
-                     color="#222", edgecolor="white", linewidth=0.5,
-                     alpha=0.70, s=22, zorder=3)
     # Annotated medians on top of each box
     medians = [float(np.median(v)) if len(v) > 0 else np.nan for v in boxes_data]
     ax_d.set_xticks(positions)
     ax_d.set_xticklabels(bin_labels, fontsize=13)
-    ax_d.set_xlabel("Mask ratio", fontsize=13)
+    ax_d.set_xlabel("Realized withheld fraction $r$", fontsize=13)
     ax_d.set_ylabel("Per-sample MAE (K)", fontsize=13)
-    ax_d.set_title("(d) Error vs mask ratio",
+    ax_d.set_title("(d) Error vs realized withheld fraction",
                    fontsize=15, pad=8, fontweight="bold")
     ax_d.tick_params(labelsize=12)
     ax_d.grid(axis="y", alpha=0.30, linestyle="--", linewidth=0.5)
     ax_d.spines["top"].set_visible(False)
     ax_d.spines["right"].set_visible(False)
-    # Pad ylim to leave room for annotations
+    # Pad ylim to leave room for annotations (whiskers are p10-p90, so no tall tails)
     cur_lim = ax_d.get_ylim()
-    ax_d.set_ylim(cur_lim[0], cur_lim[1] * 1.10)
+    ax_d.set_ylim(cur_lim[0], cur_lim[1] * 1.12)
     # Annotate sample counts and median values per bin
     yt = ax_d.get_ylim()[1]
     for i, (vals, med) in enumerate(zip(boxes_data, medians)):
@@ -251,10 +244,11 @@ def main():
                   ha="center", va="top", fontsize=12, color="#333",
                   fontweight="bold")
         if not np.isnan(med):
-            ax_d.text(i, yt * 0.88, f"med={med:.3f} K",
-                      ha="center", va="top", fontsize=10, color="#555")
+            ax_d.text(i, yt * 0.905, f"med={med:.3f} K",
+                      ha="center", va="top", fontsize=11, color="#222",
+                      fontweight="medium")
 
-    fig.suptitle("Reconstruction error statistics (60 samples · 3 mask levels)",
+    fig.suptitle("FNO-CBAM Reconstruction Error Statistics",
                  fontsize=17, fontweight="bold", y=0.97)
 
     out = OUT_DIR / "fig6_error_stats.png"

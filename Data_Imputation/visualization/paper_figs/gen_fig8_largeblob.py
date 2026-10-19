@@ -33,9 +33,10 @@ from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
 from models.fno_cbam_ablation import FNO_CBAM_Ablation
 from dineof import dineof_fill
 from simple_interp import linear_interp_2d, cubic_interp_2d
+from losses.gradient_masks import central_gradient_magnitude
 
-KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
-MAIN_MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
+KNN_FILLED_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"  # 与主结果统一
+MAIN_MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask_clean/best_model.pth"  # 新h12模型(正确OSTIA权重)
 ABLATION_VARIANTS = {
     "fno_only":      dict(use_cbam=False),
     "cbam_basic":    dict(use_cbam=True),
@@ -147,6 +148,11 @@ def boundary_pixels(mask, dilation=2):
     return dilated & ~eroded
 
 
+def gradmag(a, valid_ref_mask):
+    """梯度幅值场 (与 baselines/eval_all_methods.py / Table 1 同实现)。"""
+    return central_gradient_magnitude(a, valid_ref_mask)[0]
+
+
 def predict_model(model, sst_seq, miss_seq, art_mask, norm_mean, norm_std, device):
     sst_input = sst_seq.copy()
     sst_input[-1] = np.where(art_mask > 0, norm_mean, sst_input[-1])
@@ -183,7 +189,15 @@ def load_ablation(variant, device):
     model = FNO_CBAM_Ablation(out_size=(451, 351), modes1=80, modes2=64,
                               width=64, depth=6, cbam_reduction_ratio=16,
                               use_cbam=cfg["use_cbam"]).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
+    # fno_only 是旧代码训练的, checkpoint 无 CBAM 参数 (无CBAM机制的对照组);
+    # 类总会分配 CBAM 层但 use_cbam=False 时前向不经过它们, 故 strict=False
+    # 让缺失的 CBAM 参数保持随机初始化 (死参数, 不影响输出)
+    missing, unexpected = model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    if missing:
+        assert not cfg["use_cbam"], f"{variant} 缺参数但 use_cbam=True: {missing[:3]}"
+        assert all("cbam" in k.lower() for k in missing), \
+            f"{variant} 缺失非CBAM参数: {[k for k in missing if 'cbam' not in k.lower()][:3]}"
+    assert not unexpected, f"{variant} 有多余参数: {unexpected[:3]}"
     model.eval()
     return model, ckpt.get("norm_mean", 299.9221), ckpt.get("norm_std", 2.6919)
 
@@ -240,8 +254,10 @@ def main():
             art = gen.generate(eligible.astype(np.float32))
             if art.sum() == 0:
                 continue
-            gt = sst_seq[-1].copy()
             eval_mask = (art * eligible).astype(bool)
+            valid_ref = eligible.astype(bool)
+            gt = sst_seq[-1].copy()
+            gtg = gradmag(gt, valid_ref)
             bnd_mask = boundary_pixels(art, dilation=2) & eval_mask
             actual_ratio = float(art.sum() / (eligible.sum() + 1e-8))
 
@@ -292,10 +308,21 @@ def main():
                     bnd_mae = float(np.abs(bnd_diff).mean())
                 else:
                     bnd_mae = np.nan
+                # 梯度结构指标 (与 eval_all_methods.py / Table 1 同口径)
+                pg = gradmag(pred, valid_ref)
+                vv = eval_mask & np.isfinite(pg) & np.isfinite(gtg)
+                if vv.sum() > 1:
+                    gdiff = (pg - gtg)[vv]
+                    grad_mae = float(np.abs(gdiff).mean())
+                    grad_ratio = float(pg[vv].mean() / (gtg[vv].mean() + 1e-9))
+                    grad_corr = float(np.corrcoef(pg[vv], gtg[vv])[0, 1])
+                else:
+                    grad_mae = grad_ratio = grad_corr = np.nan
                 all_records.append(dict(
                     method=method, level=name, idx=int(idx), ts=ts[idx],
                     actual_ratio=actual_ratio,
                     mae=mae, rmse=rmse, max=mx, bnd_mae=bnd_mae,
+                    grad_mae=grad_mae, grad_ratio=grad_ratio, grad_corr=grad_corr,
                 ))
 
     out = PAPER_FIGS_CACHE / "fig8_largeblob_stats.npz"

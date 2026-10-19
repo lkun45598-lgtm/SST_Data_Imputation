@@ -1,0 +1,30 @@
+% Table 1: Quantitative comparison on held-out series 8 (657 frames)
+% Extra-mask evaluation: artificial occlusion at three nominal extra-mask levels
+% All metrics computed without post-processing smoothing
+
+\begin{table}[htbp]
+\centering
+\caption{Quantitative comparison of reconstruction methods on the held-out test series (Series 8, 657 frames) under three nominal extra-mask levels. Metrics are computed over artificially masked ocean pixels with ground truth available. All methods operate on the same proxy field without post-processing smoothing. Best results per column are \textbf{bolded}.}
+\label{tab:main_results}
+\small
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+\multirow{2}{*}{Method} & \multicolumn{3}{c}{MAE (K) $\downarrow$} & \multirow{2}{*}{RMSE $\downarrow$} & \multirow{2}{*}{Bias} & \multicolumn{2}{c}{Gradient} & \multirow{2}{*}{Type} \\
+\cmidrule(lr){2-4} \cmidrule(lr){7-8}
+& Low & Mid & High & & & MAE $\downarrow$ & Corr $\uparrow$ & \\
+\midrule
+\textbf{FNO (Ours)} & \textbf{0.328} & \textbf{0.337} & \textbf{0.360} & \textbf{0.443} & +0.019 & 0.083 & \textbf{0.364} & Deep \\
+ConvLSTM & 0.376 & 0.382 & 0.395 & 0.501 & $-$0.032 & 0.077 & 0.211 & Deep \\
+UNet & 0.382 & 0.387 & 0.418 & 0.509 & +0.034 & \textbf{0.070} & 0.323 & Deep \\
+DINCAE & 0.399 & 0.409 & 0.433 & 0.533 & +0.085 & 0.071 & 0.337 & Deep \\
+\midrule
+OI & 0.322 & 0.383 & 0.503 & 0.630 & +0.072 & 0.081 & \textbf{0.406} & Trad \\
+KNN & 0.393 & 0.430 & 0.570 & 0.606 & +0.022 & 0.088 & 0.378 & Trad \\
+DINEOF & 0.854 & 0.863 & 0.859 & 1.163 & +0.101 & 0.103 & 0.316 & Trad \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\footnotesize
+\textit{Low/Mid/High}: nominal extra-mask levels of 30\%/55\%/75\% (219 frames each). \textit{RMSE}: pooled across levels. \textit{Bias}: mean signed error (positive = warm bias). \textit{Gradient MAE}: mean absolute error of spatial gradients. \textit{Gradient Corr}: Pearson correlation of gradient fields. \textit{Type}: Deep = deep learning; Trad = traditional interpolation.
+\end{table}

@@ -26,7 +26,7 @@ def _double_conv(cin, cout):
 
 
 class DINCAE(nn.Module):
-    def __init__(self, in_frames=30, base=32, depth=4, out_size=(451, 351)):
+    def __init__(self, in_frames=30, base=16, depth=3, out_size=(451, 351)):
         super().__init__()
         self.out_size = out_size
         in_ch = 2 * in_frames                      # sst_seq + mask_seq

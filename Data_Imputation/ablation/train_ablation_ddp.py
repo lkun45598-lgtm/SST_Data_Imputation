@@ -33,10 +33,11 @@ sys.path.insert(0, str(THIS_DIR))              # so we can import models/
 
 from inference.jaxa_inference_dataset import JAXAFinetuneDataset
 from models.fno_cbam_ablation import FNO_CBAM_Ablation
+from losses.gradient_masks import torch_gradient_edge_masks, torch_boundary_edge_masks
 
 
 # ============================================================
-# Loss components (independent copy — do NOT import from training/)
+# Loss components (shared strict validity masks; kept local for ablation parity)
 # ============================================================
 
 def masked_mse_loss(pred, target, loss_mask):
@@ -44,34 +45,30 @@ def masked_mse_loss(pred, target, loss_mask):
     return ((pred - target) ** 2 * mask).sum() / (mask.sum() + 1e-8)
 
 
-def masked_gradient_loss(pred, target, loss_mask):
-    mask = loss_mask.unsqueeze(1)
+def masked_gradient_loss(pred, target, loss_mask, valid_ref_mask=None):
+    if valid_ref_mask is None:
+        valid_ref_mask = loss_mask
+    mask_gy, mask_gx = torch_gradient_edge_masks(valid_ref_mask, loss_mask)
     pred_gy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     tgt_gy = target[:, :, 1:, :] - target[:, :, :-1, :]
-    mask_gy = mask[:, :, 1:, :]
     pred_gx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
     tgt_gx = target[:, :, :, 1:] - target[:, :, :, :-1]
-    mask_gx = mask[:, :, :, 1:]
     ly = (torch.abs(pred_gy - tgt_gy) * mask_gy).sum() / (mask_gy.sum() + 1e-8)
     lx = (torch.abs(pred_gx - tgt_gx) * mask_gx).sum() / (mask_gx.sum() + 1e-8)
     return (lx + ly) / 2
 
 
-def boundary_smoothness_loss(pred, target, mask_seq):
+def boundary_smoothness_loss(pred, target, mask_seq, valid_ref_mask=None):
     cur_mask = mask_seq[:, -1, :, :].unsqueeze(1)
+    if valid_ref_mask is None:
+        valid_ref_mask = cur_mask
     pred_gx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
     tgt_gx = target[:, :, :, 1:] - target[:, :, :, :-1]
-    mask_lx = cur_mask[:, :, :, :-1]
-    mask_rx = cur_mask[:, :, :, 1:]
-    boundary_x = (((mask_lx == 0) & (mask_rx == 1)) |
-                  ((mask_lx == 1) & (mask_rx == 0))).float()
+    _, boundary_x = torch_boundary_edge_masks(cur_mask, valid_ref_mask)
     lx = (torch.abs(pred_gx - tgt_gx) * boundary_x).sum() / (boundary_x.sum() + 1e-8)
     pred_gy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     tgt_gy = target[:, :, 1:, :] - target[:, :, :-1, :]
-    mask_ty = cur_mask[:, :, :-1, :]
-    mask_by = cur_mask[:, :, 1:, :]
-    boundary_y = (((mask_ty == 0) & (mask_by == 1)) |
-                  ((mask_ty == 1) & (mask_by == 0))).float()
+    boundary_y, _ = torch_boundary_edge_masks(cur_mask, valid_ref_mask)
     ly = (torch.abs(pred_gy - tgt_gy) * boundary_y).sum() / (boundary_y.sum() + 1e-8)
     return (lx + ly) / 2
 
@@ -84,10 +81,10 @@ def output_composition(pred, sst_seq, mask_seq, land_mask):
     return composed
 
 
-def combined_loss(pred, target, loss_mask, sst_seq, mask_seq,
+def combined_loss(pred, target, loss_mask, sst_seq, mask_seq, valid_ref_mask,
                   alpha_mse, alpha_grad, alpha_temporal, alpha_boundary):
     loss_mse = masked_mse_loss(pred, target, loss_mask)
-    loss_grad = (masked_gradient_loss(pred, target, loss_mask)
+    loss_grad = (masked_gradient_loss(pred, target, loss_mask, valid_ref_mask)
                  if alpha_grad > 0 else torch.tensor(0.0, device=pred.device))
     if alpha_temporal > 0:
         prev_day = sst_seq[:, -2:-1, :, :]
@@ -97,7 +94,7 @@ def combined_loss(pred, target, loss_mask, sst_seq, mask_seq,
         loss_temporal = (penalty * loss_mask.unsqueeze(1)).sum() / (loss_mask.sum() + 1e-8)
     else:
         loss_temporal = torch.tensor(0.0, device=pred.device)
-    loss_boundary = (boundary_smoothness_loss(pred, target, mask_seq)
+    loss_boundary = (boundary_smoothness_loss(pred, target, mask_seq, valid_ref_mask)
                      if alpha_boundary > 0 else torch.tensor(0.0, device=pred.device))
     total = (alpha_mse * loss_mse + alpha_grad * loss_grad +
              alpha_temporal * loss_temporal + alpha_boundary * loss_boundary)
@@ -145,12 +142,14 @@ def train_epoch(model, loader, optimizer, device, epoch, rank, cfg, norm_mean, n
         mask_seq = batch["mask_seq"].to(device).float()
         gt_sst = batch["ground_truth_sst"].to(device).unsqueeze(1).float()
         loss_mask = batch["loss_mask"].to(device).float()
+        original_obs_mask = batch["original_obs_mask"].to(device).float()
         land_mask = batch["land_mask"].to(device).float()
+        valid_ref_mask = original_obs_mask * (1 - land_mask)
 
         pred = model(sst_seq, mask_seq)
         pred = output_composition(pred, sst_seq, mask_seq, land_mask)
         total, lm, lg, lt, lb = combined_loss(
-            pred, gt_sst, loss_mask, sst_seq, mask_seq,
+            pred, gt_sst, loss_mask, sst_seq, mask_seq, valid_ref_mask,
             alpha_mse=1.0,
             alpha_grad=cfg["alpha_grad"],
             alpha_temporal=cfg["alpha_temporal"],

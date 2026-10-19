@@ -30,7 +30,7 @@ OUT = DI / "eval_diag"; OUT.mkdir(exist_ok=True)
 CACHE = DI / "visualization/paper_figs/cache"; CACHE.mkdir(exist_ok=True)
 TILE = (112, 96, 192)   # y0, x0, size  (all-ocean square)
 OLD_MODEL = DI / "experiments/jaxa_finetune_h12/best_model.pth"          # square-trained
-NEW_MODEL = DI / "experiments/jaxa_finetune_h12_realmask/best_model.pth"  # real-cloud pilot
+NEW_MODEL = DI / "experiments/jaxa_finetune_h12_realmask_clean/best_model.pth"  # 新模型(正确OSTIA权重)
 
 
 def radial_psd(tile, hann):
@@ -89,6 +89,17 @@ def load_fno(ckpt_path, device):
     return m, float(ck.get("norm_mean", 299.9221)), float(ck.get("norm_std", 2.6919))
 
 
+def load_baseline(name, device, hour="12"):
+    import torch
+    sys.path.insert(0, str(DI))
+    from baselines.deep_models import build_model
+    ck_path = DI / f"baselines/experiments/{name}_h{hour}/best_model.pth"
+    m = build_model(name).to(device)
+    ck = torch.load(ck_path, map_location=device, weights_only=False)
+    m.load_state_dict(ck["model_state_dict"]); m.eval()
+    return m, 299.9221, 2.6919   # same OSTIA norm constants used by all baselines/FNO
+
+
 def fill_model(model, sst_seq, miss_seq, cloud, land, nm, ns, device):
     """Fill ONLY the real cloud region; real obs pixels are never overwritten."""
     import torch
@@ -99,7 +110,9 @@ def fill_model(model, sst_seq, miss_seq, cloud, land, nm, ns, device):
     st = torch.from_numpy(sn).unsqueeze(0).float().to(device)
     mt = torch.from_numpy(ms).unsqueeze(0).to(device)
     with torch.no_grad():
-        pr = model(st, mt).squeeze().cpu().numpy() * ns + nm
+        out_raw = model(st, mt)
+        out_t = out_raw[0] if isinstance(out_raw, (tuple, list)) else out_raw   # baselines return (mean, ivar)
+        pr = out_t.squeeze().cpu().numpy() * ns + nm
     out = np.where(art > 0, pr, sst_seq[-1])                 # obs preserved
     return gauss_keep_obs(np.where(land == 0, out, np.nan), land, cloud)
 
@@ -109,6 +122,8 @@ def main():
     ap.add_argument("--series", type=int, default=8)
     ap.add_argument("--n-cloudy", type=int, default=25)
     ap.add_argument("--with-models", action="store_true")
+    ap.add_argument("--with-baselines", action="store_true",
+                    help="also load DINCAE/U-Net/ConvLSTM (h12) alongside FNO for the real-cloud comparison")
     ap.add_argument("--gpu", type=int, default=0)
     args = ap.parse_args()
     with h5py.File(HR / f"jaxa_knn_filled_{args.series:02d}.h5", "r") as f:
@@ -128,14 +143,20 @@ def main():
 
     methods = ["linear", "cubic", "knn"]
     models = {}
-    if args.with_models:
+    if args.with_models or args.with_baselines:
         import torch
         device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
         print(f"loading models on {device}")
-        if OLD_MODEL.exists():
-            models["FNO_square"] = load_fno(OLD_MODEL, device)
-        if NEW_MODEL.exists():
-            models["FNO_realmask"] = load_fno(NEW_MODEL, device)
+        if args.with_models:
+            if OLD_MODEL.exists():
+                models["FNO_square"] = load_fno(OLD_MODEL, device)
+            if NEW_MODEL.exists():
+                models["FNO_realmask"] = load_fno(NEW_MODEL, device)
+        if args.with_baselines:
+            for name in ["dincae", "unet", "convlstm"]:
+                ck_path = DI / f"baselines/experiments/{name}_h12/best_model.pth"
+                if ck_path.exists():
+                    models[name] = load_baseline(name, device)
         methods = methods + list(models.keys())
         print(f"models: {list(models.keys())}")
 
@@ -157,7 +178,7 @@ def main():
         ss_p, ms_p = build_win(idx - 1)
         fills, cloud = fill_baselines(ss, obs[idx], land)
         fills_p, cloud_p = fill_baselines(ss_p, obs[idx - 1], land)
-        if args.with_models:
+        if args.with_models or args.with_baselines:
             device = next(models[list(models)[0]][0].parameters()).device
             for name, (mdl, nm, ns) in models.items():
                 fills[name] = fill_model(mdl, ss, ms, cloud, land, nm, ns, device)
@@ -207,7 +228,7 @@ def main():
     plt.xlabel("wavenumber k"); plt.ylabel("radial PSD")
     plt.title("Real-cloud-gap fill: structure realism (closest to black = best)")
     plt.legend(); plt.grid(True, which="both", alpha=0.3)
-    tag = "models" if args.with_models else "baselines"
+    tag = "models" if (args.with_models or args.with_baselines) else "baselines"
     plt.savefig(OUT / f"06_realgap_PSD_{tag}.png", dpi=120, bbox_inches="tight")
     print(f"\nsaved {OUT}/06_realgap_PSD_{tag}.png")
 

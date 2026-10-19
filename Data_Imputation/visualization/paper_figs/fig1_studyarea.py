@@ -93,16 +93,6 @@ def main():
                  fontsize=9, color="#333", ha="center",
                  arrowprops=dict(arrowstyle="->", color="#333", lw=1.2), zorder=5)
 
-    # small locator inset (schematic): SCS box within a coarse E-Asia frame
-    axI = axA.inset_axes([0.02, 0.62, 0.30, 0.34])
-    axI.set_xlim(105, 128); axI.set_ylim(5, 30)
-    axI.add_patch(Rectangle((108, 8), 12, 14, fc="#dfe6ee", ec="#888",
-                            lw=0.6))  # schematic landless context
-    axI.add_patch(Rectangle((111, 15), 7, 9, fc="none", ec="#c0392b", lw=1.6))
-    axI.text(122, 26, "E. Asia", fontsize=7, color="#555")
-    axI.set_xticks([]); axI.set_yticks([])
-    for s in axI.spines.values():
-        s.set_linewidth(0.6)
 
     # ---------- (b) cloud-gap example ----------
     fld_c = k_to_c(sst[i_cld])

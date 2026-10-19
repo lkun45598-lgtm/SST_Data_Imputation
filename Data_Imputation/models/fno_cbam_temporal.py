@@ -76,7 +76,7 @@ class FNO_CBAM_SST_Temporal(nn.Module):
     输入：60通道 (30天SST + 30天mask)
     输出：1通道 (第30天重建SST)
     """
-    def __init__(self, out_size, modes1=32, modes2=32, width=64, depth=6, cbam_reduction_ratio=16):
+    def __init__(self, out_size, modes1=32, modes2=32, width=64, depth=6, cbam_reduction_ratio=16, use_cbam=True):
         super(FNO_CBAM_SST_Temporal, self).__init__()
 
         self.modes1 = modes1
@@ -84,6 +84,7 @@ class FNO_CBAM_SST_Temporal(nn.Module):
         self.width = width
         self.depth = depth
         self.out_size = out_size
+        self.use_cbam = use_cbam  # 是否使用 CBAM（消融实验用）
 
         # 输入编码：60通道 → width
         # 方法1：简单Linear
@@ -96,15 +97,16 @@ class FNO_CBAM_SST_Temporal(nn.Module):
         # FNO层
         self.convs = nn.ModuleList()
         self.ws = nn.ModuleList()
-        self.cbams = nn.ModuleList()
+        self.cbams = nn.ModuleList() if self.use_cbam else None
         self.norms = nn.ModuleList()
 
         for i in range(self.depth):
             self.convs.append(SpectralConv2d_fast(self.width, self.width, self.modes1, self.modes2))
             self.ws.append(nn.Conv2d(self.width, self.width, 1))
 
-            m_in = out_size[0] * out_size[1]
-            self.cbams.append(CBAM_Block(c_in=self.width, m_in=m_in, reduction_ratio=cbam_reduction_ratio))
+            if self.use_cbam:
+                m_in = out_size[0] * out_size[1]
+                self.cbams.append(CBAM_Block(c_in=self.width, m_in=m_in, reduction_ratio=cbam_reduction_ratio))
             self.norms.append(nn.LayerNorm([self.width, out_size[0], out_size[1]]))
 
         # 输出解码
@@ -142,7 +144,8 @@ class FNO_CBAM_SST_Temporal(nn.Module):
             x2 = self.ws[i](x)
             x = x1 + x2
 
-            x = self.cbams[i](x)
+            if self.use_cbam:
+                x = self.cbams[i](x)
             x = self.norms[i](x)
 
             x = residual + x

@@ -34,6 +34,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from inference.jaxa_inference_dataset import JAXAFinetuneDataset
 from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal
+from losses.gradient_masks import torch_gradient_edge_masks
 
 
 # ============================================================================
@@ -61,7 +62,7 @@ def masked_mse_loss(pred, target, loss_mask):
     return loss
 
 
-def masked_gradient_loss(pred, target, loss_mask):
+def masked_gradient_loss(pred, target, loss_mask, valid_ref_mask=None):
     """
     梯度匹配损失（在loss_mask区域）
 
@@ -73,17 +74,17 @@ def masked_gradient_loss(pred, target, loss_mask):
     Returns:
         loss: scalar
     """
-    mask = loss_mask.unsqueeze(1)
+    if valid_ref_mask is None:
+        valid_ref_mask = loss_mask
+    mask_grad_y, mask_grad_x = torch_gradient_edge_masks(valid_ref_mask, loss_mask)
 
     # Y方向梯度
     pred_grad_y = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     target_grad_y = target[:, :, 1:, :] - target[:, :, :-1, :]
-    mask_grad_y = mask[:, :, 1:, :]
 
     # X方向梯度
     pred_grad_x = pred[:, :, :, 1:] - pred[:, :, :, :-1]
     target_grad_x = target[:, :, :, 1:] - target[:, :, :, :-1]
-    mask_grad_x = mask[:, :, :, 1:]
 
     # 计算梯度误差
     grad_loss_y = torch.abs(pred_grad_y - target_grad_y) * mask_grad_y
@@ -121,7 +122,7 @@ def output_composition(pred, sst_seq, mask_seq, land_mask=None):
     return composed
 
 
-def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None,
+def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None, valid_ref_mask=None,
                        alpha_mse=1.0, alpha_grad=0.2, alpha_temporal=0.1):
     """
     JAXA微调的组合损失（使用output composition后简化版）
@@ -143,7 +144,7 @@ def jaxa_combined_loss(pred, target, loss_mask, sst_seq=None,
 
     # 梯度Loss (在挖空区域)
     if alpha_grad > 0:
-        loss_grad = masked_gradient_loss(pred, target, loss_mask)
+        loss_grad = masked_gradient_loss(pred, target, loss_mask, valid_ref_mask)
     else:
         loss_grad = torch.tensor(0.0, device=pred.device)
 
@@ -201,7 +202,9 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
         mask_seq = batch['mask_seq'].to(device).float()  # [B, 30, H, W]
         gt_sst = batch['ground_truth_sst'].to(device).unsqueeze(1).float()  # [B, 1, H, W]
         loss_mask = batch['loss_mask'].to(device).float()  # [B, H, W]
+        original_obs_mask = batch['original_obs_mask'].to(device).float()
         land_mask = batch['land_mask'].to(device).float()  # [B, H, W]
+        valid_ref_mask = original_obs_mask * (1 - land_mask)
 
         # Forward
         pred = model(sst_seq, mask_seq)
@@ -213,6 +216,7 @@ def train_epoch(model, train_loader, optimizer, device, epoch, rank, norm_mean, 
         loss, loss_mse, loss_grad = jaxa_combined_loss(
             pred, gt_sst, loss_mask,
             sst_seq=sst_seq,
+            valid_ref_mask=valid_ref_mask,
             alpha_mse=1.0,
             alpha_grad=0.02,
             alpha_temporal=0.1
@@ -277,7 +281,9 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
             mask_seq = batch['mask_seq'].to(device).float()
             gt_sst = batch['ground_truth_sst'].to(device).unsqueeze(1).float()
             loss_mask = batch['loss_mask'].to(device).float()
+            original_obs_mask = batch['original_obs_mask'].to(device).float()
             land_mask = batch['land_mask'].to(device).float()
+            valid_ref_mask = original_obs_mask * (1 - land_mask)
 
             pred = model(sst_seq, mask_seq)
 
@@ -288,6 +294,7 @@ def valid_epoch(model, valid_loader, device, epoch, rank, norm_mean, norm_std):
             loss, loss_mse, _ = jaxa_combined_loss(
                 pred, gt_sst, loss_mask,
                 sst_seq=sst_seq,
+                valid_ref_mask=valid_ref_mask,
                 alpha_grad=0  # 验证时不计算梯度loss
             )
 

@@ -73,10 +73,14 @@ central gradient sample is valid only when the center and all four axial
 neighbors are finite, originally observed ocean pixels. No one-sided
 difference is used at land, missing pixels, or array boundaries.
 
-For each month, save the sample count and quantiles including P50, P90, P95,
-P99, P99.5, and P99.9 in physical units (K/pixel). `P99.9` is the soft upper
-threshold used by the pilot. The statistics file records input file identities,
-split, algorithm version, and a SHA-256 digest.
+For each month, separately save distributions for strict five-point central
+gradient magnitude and strict two-endpoint adjacent-edge difference, including
+P50, P90, P95, P99, P99.5, and P99.9 in physical units (K/pixel). The adjacent
+edge P99.9 is the soft upper threshold for edge-based `L_high` and `L_seam`;
+central-gradient statistics remain available for diagnostics. This prevents a
+threshold measured with one finite-difference stencil from being applied to a
+different stencil. The statistics file records input file identities, split,
+algorithm version, and a SHA-256 digest.
 
 ## Losses
 
@@ -104,7 +108,7 @@ truth accuracy.
 
 - `L_high`: on natural-gap interior edges, penalize only
   `relu(g_pred / U_month - 1)^2`, where both edge endpoints are naturally
-  missing and `U_month` is the training-set monthly P99.9.
+  missing and `U_month` is the training-set monthly adjacent-edge P99.9.
 - `L_seam`: apply the same soft exceedance penalty only to transitions between
   a preserved observation and a natural-gap prediction.
 - `L_low`: low-pass prediction and the causal proxy with a fixed odd-window

@@ -331,11 +331,23 @@ def stage3_knn_fill(sst_data, missing_masks, land_mask, num_workers):
 # 主流程
 # ============================================================
 
-def process_series(series_id, hour_offset, num_workers):
-    """对一个年度序列的指定小时完整三阶段预处理"""
+def process_series(series_id, hour_offset, num_workers,
+                   skip_gaussian=False, skip_knn3d=False):
+    """对一个年度序列的指定小时完整三阶段预处理
+
+    skip_gaussian: 跳过 Stage 2 高斯滤波（proxy 消融：去 Gaussian）
+    skip_knn3d:    跳过 Stage 3 3D KNN 填充（proxy 消融：去 3D KNN，
+                   深层缺口保留 NaN，训练时 dataloader 会 nan_to_num->0）
+    """
     start_total = time.time()
 
-    output_dir = OUTPUT_BASE / f'h{hour_offset:02d}'
+    # 变体输出到独立目录，避免覆盖主线 h12 数据
+    suffix = ''
+    if skip_gaussian:
+        suffix += '_nogauss'
+    if skip_knn3d:
+        suffix += '_noknn'
+    output_dir = OUTPUT_BASE / f'h{hour_offset:02d}{suffix}'
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f'jaxa_knn_filled_{series_id:02d}.h5'
 
@@ -356,10 +368,19 @@ def process_series(series_id, hour_offset, num_workers):
     land_mask = np.all(np.isnan(sst_data), axis=0).astype(np.uint8)
 
     # Stage 2 (仅平滑时间填充像素，保留原始观测真值)
-    filtered_data = stage2_filter(sst_data, missing_masks, fill_masks)
+    if skip_gaussian:
+        print("\n  Stage 2: 跳过 (高斯滤波已禁用，消融: 去 Gaussian)")
+        filtered_data = sst_data
+    else:
+        filtered_data = stage2_filter(sst_data, missing_masks, fill_masks)
 
     # Stage 3
-    filled_data = stage3_knn_fill(filtered_data, missing_masks, land_mask, num_workers)
+    if skip_knn3d:
+        print("\n  Stage 3: 跳过 (3D KNN 已禁用，消融: 去 3D KNN)")
+        print("           深层缺口保留 NaN，训练时由 dataloader nan_to_num->0")
+        filled_data = filtered_data
+    else:
+        filled_data = stage3_knn_fill(filtered_data, missing_masks, land_mask, num_workers)
 
     # 计算 original_obs_mask
     original_obs_mask = ((fill_masks == 0) & (missing_masks == 0)).astype(np.uint8)
@@ -396,6 +417,10 @@ def main():
     parser.add_argument('--hour', type=int, required=True, help='目标小时 (0-23)')
     parser.add_argument('--series', type=str, default='0', help='序列ID (0-8) 或 "all"')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help='并行核心数')
+    parser.add_argument('--skip-gaussian', action='store_true',
+                        help='proxy消融: 跳过Stage2高斯滤波，输出到 h{HH}_nogauss/')
+    parser.add_argument('--skip-knn3d', action='store_true',
+                        help='proxy消融: 跳过Stage3 3D KNN填充，输出到 h{HH}_noknn/（深层缺口留NaN）')
     args = parser.parse_args()
 
     assert 0 <= args.hour <= 23, f"hour 必须在 0-23 之间，当前: {args.hour}"
@@ -408,15 +433,19 @@ def main():
     print("=" * 70)
     print(f"JAXA SST 逐时预处理 - hour={args.hour:02d}")
     print("=" * 70)
+    _sfx = ('_nogauss' if args.skip_gaussian else '') + ('_noknn' if args.skip_knn3d else '')
     print(f"  序列: {series_ids}")
     print(f"  并行核心: {args.workers}")
-    print(f"  输出目录: {OUTPUT_BASE / f'h{args.hour:02d}'}")
+    print(f"  跳过高斯: {args.skip_gaussian} | 跳过3D KNN: {args.skip_knn3d}")
+    print(f"  输出目录: {OUTPUT_BASE / f'h{args.hour:02d}{_sfx}'}")
 
     import multiprocessing as mp
     mp.set_start_method('spawn', force=True)
 
     for sid in series_ids:
-        process_series(sid, args.hour, args.workers)
+        process_series(sid, args.hour, args.workers,
+                       skip_gaussian=args.skip_gaussian,
+                       skip_knn3d=args.skip_knn3d)
 
     print("\n全部完成!")
 

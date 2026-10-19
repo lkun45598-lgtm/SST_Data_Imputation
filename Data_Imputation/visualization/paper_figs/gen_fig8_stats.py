@@ -20,29 +20,37 @@ ABLATION_DIR = DATA_IMPUTATION_DIR / "ablation"
 sys.path.insert(0, str(DATA_IMPUTATION_DIR))
 sys.path.insert(0, str(ABLATION_DIR))
 
-from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal  # main model
-from models.fno_cbam_ablation import FNO_CBAM_Ablation     # ablation variants
+from models.fno_cbam_ablation import FNO_CBAM_Ablation  # 消融专用类, 可加载全部4个变体
+from models.fno_cbam_temporal import FNO_CBAM_SST_Temporal  # 部署模型(论文主结果)
+from inference.real_cloud_mask import build_cloud_bank, RealCloudMaskGenerator
+from losses.gradient_masks import central_gradient_magnitude
 
-KNN_FILLED_DIR = Path("/data1/user/lz/FNO_CBAM/data_for_agent_FNO_CBAM_H20/FNO_CBAM/jaxa_knn_filled")
+# 数据: h12 series 8 (held-out), 与主结果/proxy消融统一
+DATA_DIR = DATA_IMPUTATION_DIR / "experiments/hourly_data/h12"
 CACHE_DIR = Path(__file__).parent / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-# Variants and where to find them
+# 评估全部4个消融变体 (真实小云掩码), 供 fig9 small-masks 面板使用:
+#   fno_only      : 无CBAM, 无增强loss
+#   cbam_basic    : +CBAM +梯度loss
+#   cbam_boundary : +边界loss (部署模型)
+#   cbam_full     : +时间loss
 ABLATION_VARIANTS = {
     "fno_only":      dict(use_cbam=False),
     "cbam_basic":    dict(use_cbam=True),
     "cbam_boundary": dict(use_cbam=True),
     "cbam_full":     dict(use_cbam=True),
 }
-MAIN_MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune/best_model.pth"
 
 WINDOW_SIZE = 30
-GPU_ID = 0                       # 3 号卡在重训, 改用空闲卡
-SERIES_ID = 8                    # held-out validation series (train=0..7); 不再在训练序列 0 上评估
+GPU_ID = 0
+SERIES_ID = 8                    # held-out test series
 GAUSSIAN_SIGMA = 1.0
-SEED = 42
+SEED = 42                        # 与论文主结果 / gen_fig6 / largeblob 统一
+# 部署模型(论文主结果 0.328/0.337/0.360, val_mae=0.304), 作为消融"完整模型"终点柱
+MAIN_MODEL_PATH = DATA_IMPUTATION_DIR / "experiments/jaxa_finetune_h12_realmask_clean/best_model.pth"
 
-NUM_SAMPLES_PER_LEVEL = 15
+NUM_SAMPLES_PER_LEVEL = 20       # 与主结果/proxy消融统一
 MASK_LEVELS = [
     ("low",  0.30),
     ("mid",  0.55),
@@ -114,6 +122,11 @@ def knn_inpaint_2d(sst, mask_to_fill, valid_ocean, k=20, power=2.0):
     return out
 
 
+def gradmag(a, valid_ref_mask):
+    """严格中心梯度；无效中心或四邻域不生成样本。"""
+    return central_gradient_magnitude(a, valid_ref_mask)[0]
+
+
 def gauss_filter(sst, land_mask, sigma, fill_region=None):
     """fill_region 给定时只在该区(填充/masked区)写回滤波值，观测保留原值。"""
     valid = ~np.isnan(sst) & (land_mask == 0)
@@ -144,17 +157,6 @@ def predict_model(model, sst_seq, miss_seq, artificial_mask, norm_mean, norm_std
     return full
 
 
-def load_main_model(device):
-    ckpt = torch.load(MAIN_MODEL_PATH, map_location=device, weights_only=False)
-    model = FNO_CBAM_SST_Temporal(
-        out_size=(451, 351), modes1=80, modes2=64, width=64, depth=6,
-        cbam_reduction_ratio=16,
-    ).to(device)
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-    return model, ckpt.get("norm_mean", 299.9221), ckpt.get("norm_std", 2.6919)
-
-
 def load_ablation_model(variant, device):
     ckpt_path = ABLATION_DIR / "experiments" / variant / "best_model.pth"
     if not ckpt_path.exists():
@@ -165,6 +167,25 @@ def load_ablation_model(variant, device):
         out_size=(451, 351), modes1=80, modes2=64, width=64, depth=6,
         cbam_reduction_ratio=16, use_cbam=cfg["use_cbam"],
     ).to(device)
+    # fno_only 是无CBAM对照组, checkpoint 缺 CBAM 参数; 类总会分配 CBAM 层但
+    # use_cbam=False 时前向不经过, 故 strict=False 让缺失的 CBAM 参数保持随机
+    # 初始化 (死参数, 不影响输出)。与 gen_fig8_largeblob.py 完全一致。
+    missing, unexpected = model.load_state_dict(ckpt["model_state_dict"], strict=False)
+    if missing:
+        assert not cfg["use_cbam"], f"{variant} 缺参数但 use_cbam=True: {missing[:3]}"
+        assert all("cbam" in k.lower() for k in missing), \
+            f"{variant} 缺失非CBAM参数: {[k for k in missing if 'cbam' not in k.lower()][:3]}"
+    assert not unexpected, f"{variant} 有多余参数: {unexpected[:3]}"
+    model.eval()
+    return model, ckpt.get("norm_mean", 299.9221), ckpt.get("norm_std", 2.6919)
+
+
+def load_main_model(device):
+    """部署模型 (论文主结果): 与 gen_fig8_largeblob.load_main_model 一致。"""
+    ckpt = torch.load(MAIN_MODEL_PATH, map_location=device, weights_only=False)
+    model = FNO_CBAM_SST_Temporal(out_size=(451, 351), modes1=80, modes2=64,
+                                  width=64, depth=6,
+                                  cbam_reduction_ratio=16).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     return model, ckpt.get("norm_mean", 299.9221), ckpt.get("norm_std", 2.6919)
@@ -182,11 +203,8 @@ def main():
     device = torch.device(f"cuda:{GPU_ID}" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
 
-    # Load all models
+    # Load ablation models (fno_only, cbam_basic, cbam_boundary, cbam_full)
     print("\nLoading models...")
-    main_model, m_mean, m_std = load_main_model(device)
-    print(f"  main model: loaded (mean={m_mean:.2f}, std={m_std:.2f})")
-
     ablation_models = {}
     for v in ABLATION_VARIANTS:
         m, mu, sd = load_ablation_model(v, device)
@@ -195,28 +213,33 @@ def main():
         else:
             ablation_models[v] = (m, mu, sd)
             print(f"  ablation/{v}: loaded")
+    # 部署模型 (论文主结果), 作为 fig9 "完整模型"终点柱
+    main_model, main_mean, main_std = load_main_model(device)
+    print(f"  main (deployed): loaded")
 
-    # Load data
-    path = KNN_FILLED_DIR / f"jaxa_knn_filled_{SERIES_ID:02d}.h5"
+    # Load data (h12 series 8)
+    path = DATA_DIR / f"jaxa_knn_filled_{SERIES_ID:02d}.h5"
     print(f"\nLoading {path}")
     with h5py.File(path, "r") as f:
         sst_all = f["sst_data"][:]
         obs_all = f["original_obs_mask"][:]
         miss_all = f["original_missing_mask"][:]
         land = f["land_mask"][:]
-        lat = f["latitude"][:]
-        lon = f["longitude"][:]
     T = sst_all.shape[0]
     ocean = 1 - land
+
+    # 真实云掩码库 (与 proxy 消融 / 主结果统一)
+    cloud_h5 = [str(DATA_DIR / f"jaxa_knn_filled_{i:02d}.h5") for i in [0, 3, 6]]
+    bank = build_cloud_bank(cloud_h5, max_donors=400, seed=7)
 
     rng = np.random.default_rng(SEED)
     start = WINDOW_SIZE - 1
     candidates = np.array([i for i in range(start, T) if obs_all[i].sum() > 5000])
     print(f"candidate frames: {len(candidates)}")
 
-    # Per-method metric collector: dict[method] -> list of records
+    # Per-method metric collector
     methods = ["knn"] + list(ablation_models.keys()) + ["main"]
-    print(f"Methods to evaluate: {methods}")
+    print(f"Methods to evaluate (真实云掩码): {methods}")
     all_records = []
 
     for name, level in MASK_LEVELS:
@@ -224,7 +247,7 @@ def main():
         idx_sample = rng.choice(candidates,
                                 size=min(NUM_SAMPLES_PER_LEVEL, len(candidates)),
                                 replace=False)
-        gen = SquareMaskGenerator(mask_ratio=level, seed=int(level * 1000))
+        gen = RealCloudMaskGenerator(bank, seed=int(level * 1000))
         for idx in tqdm(idx_sample, desc=f"  {name}"):
             sst_seq = np.zeros((WINDOW_SIZE, *sst_all.shape[1:]), dtype=np.float32)
             miss_seq = np.zeros_like(sst_seq, dtype=np.float32)
@@ -236,9 +259,11 @@ def main():
             eligible = obs_30 * ocean
             if eligible.sum() < 2000:
                 continue
-            mask = gen.generate(eligible.astype(np.float32))
+            mask = gen.generate(eligible.astype(np.float32), target_ratio=level)
             gt = sst_seq[-1].copy()
             eval_mask = (mask * eligible).astype(bool)
+            valid_ref = eligible.astype(bool)
+            gtg = gradmag(gt, valid_ref)
             bnd_mask = boundary_pixels(mask, dilation=2) & eval_mask
             actual_ratio = float(mask.sum() / (eligible.sum() + 1e-8))
 
@@ -250,16 +275,16 @@ def main():
             knn_pred = gauss_filter(knn_pred, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
             preds["knn"] = knn_pred
 
-            # Ablation variants
+            # Ablation variants (fno_only, cbam_basic, cbam_boundary, cbam_full)
             for v, (mdl, mu, sd) in ablation_models.items():
                 p = predict_model(mdl, sst_seq, miss_seq, mask, mu, sd, device)
                 p = gauss_filter(p, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
                 preds[v] = p
 
-            # Main model
-            p = predict_model(main_model, sst_seq, miss_seq, mask, m_mean, m_std, device)
-            p = gauss_filter(p, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
-            preds["main"] = p
+            # 部署模型 (论文主结果)
+            pm = predict_model(main_model, sst_seq, miss_seq, mask,
+                               main_mean, main_std, device)
+            preds["main"] = gauss_filter(pm, land, GAUSSIAN_SIGMA, fill_region=(mask > 0))
 
             # Metrics per method (in K)
             for method_name, pred in preds.items():
@@ -275,10 +300,21 @@ def main():
                     bnd_mae = float(np.abs(bnd_diff).mean())
                 else:
                     bnd_mae = np.nan
+                # 梯度结构指标 (与 eval_all_methods.py / Table 1 同口径)
+                pg = gradmag(pred, valid_ref)
+                vv = eval_mask & np.isfinite(pg) & np.isfinite(gtg)
+                if vv.sum() > 1:
+                    gdiff = (pg - gtg)[vv]
+                    grad_mae = float(np.abs(gdiff).mean())
+                    grad_ratio = float(pg[vv].mean() / (gtg[vv].mean() + 1e-9))
+                    grad_corr = float(np.corrcoef(pg[vv], gtg[vv])[0, 1])
+                else:
+                    grad_mae = grad_ratio = grad_corr = np.nan
                 all_records.append(dict(
                     method=method_name, level=name, idx=int(idx),
                     actual_ratio=actual_ratio,
                     mae=mae, rmse=rmse, max=mx, bnd_mae=bnd_mae,
+                    grad_mae=grad_mae, grad_ratio=grad_ratio, grad_corr=grad_corr,
                 ))
 
     out = CACHE_DIR / "fig8_stats.npz"

@@ -5,6 +5,8 @@ Loss functions for temporal FNO-CBAM
 import torch
 import torch.nn.functional as F
 
+from losses.gradient_masks import torch_gradient_edge_masks
+
 
 def reconstruction_loss_missing(pred, target, missing_mask, ocean_mask):
     """
@@ -46,23 +48,24 @@ def reconstruction_loss_observed(pred, target, missing_mask, ocean_mask):
     return loss
 
 
-def gradient_loss(pred, target, missing_mask, ocean_mask):
+def gradient_loss(pred, target, missing_mask, ocean_mask, valid_ref_mask=None):
     """
     梯度匹配损失：减少锋面位置偏移导致的大单点误差
 
     只在缺失区域计算
     """
-    reconstruction_mask = (missing_mask * ocean_mask).unsqueeze(1)
+    reconstruction_mask = missing_mask * ocean_mask
+    if valid_ref_mask is None:
+        valid_ref_mask = ocean_mask
+    mask_grad_y, mask_grad_x = torch_gradient_edge_masks(valid_ref_mask, reconstruction_mask)
 
     # Y方向梯度
     pred_grad_y = pred[:, :, 1:, :] - pred[:, :, :-1, :]
     target_grad_y = target[:, :, 1:, :] - target[:, :, :-1, :]
-    mask_grad_y = reconstruction_mask[:, :, 1:, :]
 
     # X方向梯度
     pred_grad_x = pred[:, :, :, 1:] - pred[:, :, :, :-1]
     target_grad_x = target[:, :, :, 1:] - target[:, :, :, :-1]
-    mask_grad_x = reconstruction_mask[:, :, :, 1:]
 
     # 计算梯度误差
     grad_loss_y = torch.abs(pred_grad_y - target_grad_y) * mask_grad_y
@@ -231,7 +234,12 @@ def temporal_consistency_loss_stats(pred, sst_seq, ocean_mask):
     pred_change = pred - last_day  # (B, 1, H, W)
 
     # 标准化偏差：超过3个标准差视为异常
-    deviation = torch.abs(pred_change.squeeze(1) - mean_change) / (std_change + 1e-8)
+    # 注意：陆地/长期静止像素的 std_change 可接近0，(std_change + 1e-8) 分母会
+    # 让 deviation 炸到 1e8+ 量级，进而让整个 combined loss 失真（实测可达千万级），
+    # 掩盖 loss_missing/loss_grad 的真实监督信号。用一个物理意义上的下限
+    # （归一化空间下 ~0.05K 日间变化噪声）代替 1e-8，而不是纯数值 epsilon。
+    std_change_floor = 0.02  # normalized units (~0.05K in real space at std=2.69)
+    deviation = torch.abs(pred_change.squeeze(1) - mean_change) / std_change.clamp(min=std_change_floor)
     penalty = F.relu(deviation - 3.0)  # 只惩罚超过3σ的部分
 
     # 只在海洋区域计算
@@ -379,7 +387,8 @@ def combined_loss_temporal(pred, target, missing_mask, ocean_mask,
 
     # 梯度loss（保持物理特征 - 一阶PDE）
     if gamma > 0:
-        loss_grad = gradient_loss(pred, target, missing_mask, ocean_mask)
+        loss_grad = gradient_loss(pred, target, missing_mask, ocean_mask,
+                                  valid_ref_mask=ocean_mask)
     else:
         loss_grad = torch.tensor(0.0, device=pred.device)
 

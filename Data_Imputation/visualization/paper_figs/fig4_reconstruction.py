@@ -1,11 +1,13 @@
-"""Figure 4: Reconstruction results — 3 cases (low/mid/high mask) × 5 columns.
+"""Figure 4: Reconstruction results — 3 cases (30/55/75% extra-mask level) × 5 columns.
 
-Columns:
+Rows are representative scenes for the three extra-mask levels
+(30%, 55%, 75% of the observed ocean withheld). Columns:
   (1) Masked input (GT with masked pixels rendered as soft gray)
-  (2) Ground truth (complete SST)
+  (2) Reference (observed pixels only)
   (3) KNN baseline (2D IDW reconstruction)
-  (4) FNO-CBAM reconstruction (with Gaussian σ=1.0)
-  (5) |Error| map for FNO-CBAM (only at masked pixels)
+  (4) FNO-CBAM reconstruction
+  (5) |Error| map for FNO-CBAM (at originally observed pixels)
+
 """
 import sys
 from pathlib import Path
@@ -13,7 +15,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import cmocean
-from matplotlib.patches import Patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 from style import (apply_paper_style, CMAPS, save_fig,
@@ -23,7 +24,6 @@ from style import (apply_paper_style, CMAPS, save_fig,
 CACHE = Path(__file__).parent / "cache" / "eval_cache.npz"
 OUT_DIR = Path(__file__).parent / "output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-
 
 def k_to_c(arr):
     return arr - 273.15
@@ -155,11 +155,11 @@ def main():
     last_sst_im = None
     last_err_im = None
     col_titles = [
-        "Masked input",
-        "Original observations",                    # sparse — observed only
-        "KNN reconstruction (baseline)",            # not GT — non-DL inpainting
-        "FNO-CBAM reconstruction (ours)",
-        "|FNO − GT|  (at observed pixels)",         # ONLY where real GT exists
+        "Input (masked)",
+        "Reference (observed)",
+        "KNN interpolation",
+        "FNO-CBAM (ours)",
+        "FNO-CBAM error",
     ]
 
     for r, (level_name, c) in enumerate(rows):
@@ -180,8 +180,12 @@ def main():
             show_y=True, show_x=is_bot,
             panel_title=col_titles[0] if is_top else None,
         )
-        # Left row label — use the y-axis annotation channel (text-only via supylabel-like)
-        label_text = f"{level_name.upper()} mask  ({c['actual_ratio']*100:.0f}%)"
+        # Left row label — representative scenes for the three protocol
+        # missingness levels (30/55/75 extra-mask level), matching Table 1 and
+        # the ablations. "Extra-mask level" avoids implying the full field's
+        # natural cloud-missing rate.
+        target_ratio_display = {"low": 30, "mid": 55, "high": 75}
+        label_text = f"{target_ratio_display[level_name]}% extra-mask level"
         # Place via figure-level transform so it doesn't fight with the y-tick labels of col 0
         ax_pos = ax.get_position()
         fig.text(
@@ -250,7 +254,6 @@ def main():
              f"RMSE: {c['fno_metrics']['rmse']:.3f} K"],
             loc="lower left", fontsize=12,
         )
-
         # ===== Col 5: error map over the OBSERVED region only =====
         # GT exists only where the satellite actually observed SST. Cloud
         # regions have no real GT and are rendered as gray.
@@ -270,13 +273,11 @@ def main():
             show_y=False, show_x=is_bot,
             panel_title=col_titles[4] if is_top else None,
         )
-        n_eval = int((c["mask"] * ocean).sum())
         annotate_metric(
             ax,
             [f"MAE: {c['fno_metrics']['mae']:.3f} K",
-             f"Max: {c['fno_metrics']['maxv']:.3f} K",
-             f"n_eval = {n_eval:,} pix"],
-            loc="lower left", fontsize=11,
+             f"Max: {c['fno_metrics']['maxv']:.3f} K"],
+            loc="lower left", fontsize=12,
         )
         # Per-row error colorbar in gs col 6
         cax_e_holder = fig.add_subplot(gs[r, 6])
@@ -306,8 +307,7 @@ def main():
     # (Error colorbars are now drawn per-row alongside each error panel.)
 
     fig.suptitle(
-        "Reconstruction comparison — error evaluated only inside the artificial mask "
-        "(KNN baseline does not see ground truth either)",
+        "Reconstruction Comparison at Three Nominal Extra-mask Levels",
         fontsize=14, fontweight="bold", y=0.985,
     )
     out = OUT_DIR / "fig4_reconstruction.png"

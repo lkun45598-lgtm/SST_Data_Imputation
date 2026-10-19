@@ -1,9 +1,12 @@
-"""Figure 8: Ablation study bar charts (2x2 layout).
+"""Figure 8: Method comparison bar charts (2x2 layout).
 
-(a) MAE per method (overall)
-(b) RMSE per method (overall)
-(c) Boundary-region MAE per method (tests boundary loss effect)
-(d) High-mask (>65%) MAE per method (tests robustness under heavy missing)
+Compares FNO-CBAM (ours) against traditional and deep-learning baselines on
+held-out JAXA series 8 (same frames + same real-cloud masks per method).
+
+(a) MAE (all samples)
+(b) RMSE (all samples)
+(c) Deep-gap MAE (withheld pixels >=30 km from any real observation)
+(d) MAE under heavy masking (>65%)
 """
 import sys
 from pathlib import Path
@@ -13,69 +16,76 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).parent))
 from style import apply_paper_style, save_fig
 
-CACHE = Path(__file__).parent / "cache" / "fig8_stats.npz"
-BASELINE_CACHE = Path(__file__).parent / "cache" / "baseline_stats.npz"
+CACHE = Path(__file__).parent / "cache" / "all_methods_full.npz"
 OUT_DIR = Path(__file__).parent / "output"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Methods ordered: traditional (gray-ish) → DL variants (warm/cool) → main
+# Methods ordered: classical baselines (gray) -> DL baselines (cool) -> ours (warm)
 METHOD_ORDER = [
-    "linear_2d", "cubic_2d", "dineof", "knn",   # traditional baselines
-    "fno_only", "cbam_basic", "cbam_boundary", "cbam_full",  # DL ablations
-    "main",                                                   # main model
+    "linear", "cubic", "knn", "oi", "dineof",  # traditional / classical baselines
+    "dincae", "unet", "convlstm",              # deep-learning baselines
+    "fno",                                     # ours
 ]
 METHOD_LABELS = {
-    "linear_2d":     "Linear\ninterp",
-    "cubic_2d":      "Cubic\ninterp",
-    "dineof":        "DINEOF",
-    "knn":           "KNN-IDW",
-    "fno_only":      "FNO only",
-    "cbam_basic":    "+ CBAM\n(+grad)",
-    "cbam_boundary": "+ boundary",
-    "cbam_full":     "+ temporal",
-    "main":          "Main\n(ours)",
+    "linear":   "Linear",
+    "cubic":    "Cubic",
+    "knn":      "KNN-IDW",
+    "oi":       "OI /\nKriging",
+    "dineof":   "DINEOF",
+    "dincae":   "DINCAE",
+    "unet":     "U-Net",
+    "convlstm": "ConvLSTM",
+    "fno":      "FNO-CBAM\n(ours)",
 }
 METHOD_COLORS = {
-    "linear_2d":     "#c8c8c8",
-    "cubic_2d":      "#a8a8a8",
-    "dineof":        "#888888",
-    "knn":           "#9a9a9a",
-    "fno_only":      "#d4956b",
-    "cbam_basic":    "#e0b48a",
-    "cbam_boundary": "#7fa7c4",
-    "cbam_full":     "#3b6e8f",
-    "main":          "#9b5d6e",
+    "linear":   "#d8d8d8",
+    "cubic":    "#c8c8c8",
+    "knn":      "#b8b8b8",
+    "oi":       "#a0a0a0",
+    "dineof":   "#888888",
+    "dincae":   "#8fb0cc",
+    "unet":     "#6f97bd",
+    "convlstm": "#4f7ba6",
+    "fno":      "#9b5d6e",
 }
 
 
-def _bar_panel(ax, methods, values, errs, title, ylabel,
-               annotate_value=True, ymax=None):
+def _bar_panel(ax, methods, values, errs, title, ylabel, ymax=None):
     """Plot bars; values above `ymax` are clipped and labelled 'off scale'."""
     xs = np.arange(len(methods))
     colors = [METHOD_COLORS.get(m, "#888") for m in methods]
     values_arr = np.array(values, dtype=float)
     errs_arr = np.array(errs, dtype=float)
 
-    # Soft cap so far-outlier bars don't dominate the y-axis
+    # Soft cap so far-outlier bars (e.g. DINEOF) don't dominate the y-axis
     if ymax is None:
-        # Auto-cap at 1.4x the second-largest value
         sorted_v = np.sort(values_arr[np.isfinite(values_arr)])
         if len(sorted_v) >= 2:
-            ymax_auto = float(sorted_v[-2]) * 1.5
-            ymax = max(ymax_auto, 0.05)
+            ymax = max(float(sorted_v[-2]) * 1.5, 0.05)
         else:
             ymax = float(np.nanmax(values_arr) * 1.1)
 
     plot_values = np.minimum(values_arr, ymax)
-    plot_errs = np.where(values_arr > ymax, 0, errs_arr)
     over_cap = values_arr > ymax
 
-    bars = ax.bar(xs, plot_values, yerr=plot_errs, width=0.66,
-                  color=colors, edgecolor="#333", linewidth=0.8,
-                  capsize=4, error_kw=dict(ecolor="#444", lw=1.0))
+    # Asymmetric whiskers: clip the upper end to the visible panel top so that
+    # high-variance methods (Cubic, DINEOF) don't shoot a whisker off-scale and
+    # visually dominate; lower end is clipped at 0. Bar heights / y-limits stay
+    # unchanged — only the drawn whisker length is capped.
+    top = ymax * 1.16
+    lo_err = np.where(over_cap, 0.0, np.minimum(errs_arr, plot_values))
+    hi_err = np.where(over_cap, 0.0,
+                      np.minimum(errs_arr, np.maximum(top - plot_values, 0.0)))
+    plot_errs = np.vstack([lo_err, hi_err])
+
+    ax.bar(xs, plot_values, yerr=plot_errs, width=0.66,
+           color=colors, edgecolor="#333", linewidth=0.8,
+           capsize=4, error_kw=dict(ecolor="#444", lw=1.0))
 
     ax.set_xticks(xs)
-    ax.set_xticklabels([METHOD_LABELS.get(m, m) for m in methods], fontsize=11)
+    ax.set_xticklabels([METHOD_LABELS.get(m, m) for m in methods],
+                       fontsize=9.5, rotation=20, ha="right",
+                       rotation_mode="anchor")
     ax.set_ylabel(ylabel, fontsize=12)
     ax.set_title(title, fontsize=14, pad=8, fontweight="bold")
     ax.tick_params(labelsize=11)
@@ -84,35 +94,31 @@ def _bar_panel(ax, methods, values, errs, title, ylabel,
     ax.spines["right"].set_visible(False)
     ax.set_ylim(0, ymax * 1.18)
 
-    if annotate_value:
-        for x, v, capped in zip(xs, values_arr, over_cap):
-            if not np.isfinite(v):
-                continue
-            if capped:
-                # Show the real value with "off scale" arrow
-                ax.text(x, ymax * 1.02, f"{v:.3f}↑",
-                        ha="center", va="bottom", fontsize=10,
-                        color="#a83333", fontweight="bold")
-                ax.text(x, ymax * 0.97, "off",
-                        ha="center", va="top", fontsize=8,
-                        color="#a83333", style="italic")
-            else:
-                ax.text(x, v + ymax * 0.02, f"{v:.3f}",
-                        ha="center", va="bottom", fontsize=10,
-                        color="#333", fontweight="bold")
+    for x, v, capped in zip(xs, values_arr, over_cap):
+        if not np.isfinite(v):
+            continue
+        if capped:
+            ax.text(x, ymax * 1.02, f"{v:.3f}↑",
+                    ha="center", va="bottom", fontsize=10,
+                    color="#a83333", fontweight="bold")
+            ax.text(x, ymax * 0.97, "off",
+                    ha="center", va="top", fontsize=8,
+                    color="#a83333", style="italic")
+        else:
+            ax.text(x, v + ymax * 0.02, f"{v:.3f}",
+                    ha="center", va="bottom", fontsize=10,
+                    color="#333", fontweight="bold")
 
 
-def aggregate(records, metric, *, level=None, ratio_min=None, ratio_max=None):
-    """Return per-method (mean, std, n) of `metric`, filtered by level / ratio."""
+def aggregate(records, metric, *, ratio_min=None, ratio_max=None):
+    """Return per-method (mean, std, n) of `metric`, optionally filtered by ratio."""
     out = {}
     for m in METHOD_ORDER:
         rs = [r for r in records if r["method"] == m]
-        if level:
-            rs = [r for r in rs if r["level"] == level]
         if ratio_min is not None:
-            rs = [r for r in rs if r["actual_ratio"] >= ratio_min]
+            rs = [r for r in rs if r.get("target_ratio", 0) >= ratio_min]
         if ratio_max is not None:
-            rs = [r for r in rs if r["actual_ratio"] <= ratio_max]
+            rs = [r for r in rs if r.get("target_ratio", 1) <= ratio_max]
         vals = [r[metric] for r in rs if np.isfinite(r.get(metric, np.nan))]
         out[m] = (float(np.mean(vals)) if vals else np.nan,
                   float(np.std(vals)) if vals else np.nan,
@@ -124,14 +130,6 @@ def main():
     apply_paper_style()
     raw = np.load(CACHE, allow_pickle=True)
     records = list(raw["records"])
-    # Merge in traditional baselines from baseline_stats.npz
-    if BASELINE_CACHE.exists():
-        bl_raw = np.load(BASELINE_CACHE, allow_pickle=True)
-        records.extend(list(bl_raw["records"]))
-        print(f"Loaded {len(bl_raw['records'])} baseline records")
-    else:
-        print(f"WARN: {BASELINE_CACHE} missing — baselines not in figure")
-
     methods = [m for m in METHOD_ORDER
                if any(r["method"] == m for r in records)]
     print(f"Methods to plot: {methods}")
@@ -139,43 +137,44 @@ def main():
     # ---- Aggregates ----
     agg_mae = aggregate(records, "mae")
     agg_rmse = aggregate(records, "rmse")
-    agg_bnd = aggregate(records, "bnd_mae")
-    agg_high = aggregate(records, "mae", ratio_min=0.65)
+    agg_deep = aggregate(records, "mae_deep")            # deep-gap (>=30km) MAE
+    agg_high = aggregate(records, "mae", ratio_min=0.65)  # heavy masking
 
-    # Wider figure to fit 9 bars per panel comfortably
     fig = plt.figure(figsize=(18, 11))
     gs = fig.add_gridspec(
         2, 2,
         hspace=0.38, wspace=0.20,
-        left=0.07, right=0.97, top=0.93, bottom=0.09,
+        left=0.07, right=0.97, top=0.92, bottom=0.09,
     )
 
     ax = fig.add_subplot(gs[0, 0])
-    v = [agg_mae[m][0] for m in methods]
-    e = [agg_mae[m][1] for m in methods]
-    _bar_panel(ax, methods, v, e, "(a) MAE (all samples)", "MAE (K)")
+    _bar_panel(ax, methods,
+               [agg_mae[m][0] for m in methods],
+               [agg_mae[m][1] for m in methods],
+               "(a) MAE (all samples)", "MAE (K)")
 
     ax = fig.add_subplot(gs[0, 1])
-    v = [agg_rmse[m][0] for m in methods]
-    e = [agg_rmse[m][1] for m in methods]
-    _bar_panel(ax, methods, v, e, "(b) RMSE (all samples)", "RMSE (K)")
+    _bar_panel(ax, methods,
+               [agg_rmse[m][0] for m in methods],
+               [agg_rmse[m][1] for m in methods],
+               "(b) RMSE (all samples)", "RMSE (K)")
 
     ax = fig.add_subplot(gs[1, 0])
-    v = [agg_bnd[m][0] for m in methods]
-    e = [agg_bnd[m][1] for m in methods]
-    _bar_panel(ax, methods, v, e,
-               "(c) Boundary-region MAE", "MAE @ mask boundary (K)")
+    _bar_panel(ax, methods,
+               [agg_deep[m][0] for m in methods],
+               [agg_deep[m][1] for m in methods],
+               "(c) Deep-gap MAE (≥30 km from observations)", "MAE (K)")
 
     ax = fig.add_subplot(gs[1, 1])
-    v = [agg_high[m][0] for m in methods]
-    e = [agg_high[m][1] for m in methods]
-    _bar_panel(ax, methods, v, e,
+    _bar_panel(ax, methods,
+               [agg_high[m][0] for m in methods],
+               [agg_high[m][1] for m in methods],
                "(d) MAE under heavy masking (>65%)", "MAE (K)")
 
     n_per = agg_mae[methods[0]][2] if methods else 0
     fig.suptitle(
-        f"Method comparison — traditional baselines, ablation variants, and "
-        f"main model  (n={n_per} samples/method)",
+        f"Method Comparison: FNO-CBAM vs. Traditional and Deep-Learning "
+        f"Baselines  (n={n_per} samples/method)",
         fontsize=15, fontweight="bold", y=0.985,
     )
 
@@ -186,11 +185,11 @@ def main():
 
     # Print summary table
     print("\n=== Summary ===")
-    print(f"{'method':<18}{'MAE':>10}{'RMSE':>10}{'bnd_MAE':>12}{'MAE>65%':>12}")
+    print(f"{'method':<18}{'MAE':>10}{'RMSE':>10}{'deep_MAE':>12}{'MAE>65%':>12}")
     for m in methods:
         print(f"{METHOD_LABELS.get(m, m).replace(chr(10), ' '):<18}"
               f"{agg_mae[m][0]:>10.4f}{agg_rmse[m][0]:>10.4f}"
-              f"{agg_bnd[m][0]:>12.4f}{agg_high[m][0]:>12.4f}")
+              f"{agg_deep[m][0]:>12.4f}{agg_high[m][0]:>12.4f}")
 
 
 if __name__ == "__main__":
